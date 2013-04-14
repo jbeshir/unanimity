@@ -1,0 +1,8 @@
+# Unanimity configuration file.
+# Lists pairs of node IDs and node IPs, one per line.
+# Lines beginning with # are ignored.
+#
+# There must be an <id>.crt file for each of these nodes,
+# in the same directory as this configuration file.
+1 127.0.0.1
+9001 127.0.1.1

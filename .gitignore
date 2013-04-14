@@ -20,3 +20,12 @@ _cgo_export.*
 _testmain.go
 
 *.exe
+
+# Configuration files, including certificates.
+*.key
+*.csr
+*.crt
+unanimity.conf
+
+# Compiled executable
+unanimity
