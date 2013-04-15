@@ -1,0 +1,8 @@
+message Message {
+	required uint32 msgType = 1;
+	required bytes content = 2;
+}
+
+message Capabilities {
+	repeated string capabilities = 1;
+}

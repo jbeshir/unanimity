@@ -16,6 +16,7 @@ import (
 
 import (
 	"github.com/jbeshir/unanimity/config"
+	_ "github.com/jbeshir/unanimity/shared/connect"
 )
 
 func main() {

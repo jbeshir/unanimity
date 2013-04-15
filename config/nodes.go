@@ -14,6 +14,7 @@ type node struct {
 var nodes = make(map[uint16]*node)
 var coreNodeIds []uint16
 var clientNodeIds []uint16
+var allNodeIds []uint16
 
 // Adds a node with the given ID to the configuration.
 // Must be called only at startup.
@@ -25,6 +26,7 @@ func AddNode(id uint16, ip net.IP, cert *x509.CertPool) {
 	}
 
 	nodes[id] = &node{id: id, ip: ip, cert: cert}
+	allNodeIds = append(allNodeIds, id)
 	if id <= 8192 {
 		coreNodeIds = append(coreNodeIds, id)
 	} else {
@@ -32,13 +34,19 @@ func AddNode(id uint16, ip net.IP, cert *x509.CertPool) {
 	}
 }
 
-// Returns a slice of all core node IDs.
+// Returns a slice of node IDs.
+// The returned slice is not copied for each call, and so must not be modified.
+func Nodes() []uint16 {
+	return allNodeIds
+}
+
+// Returns a slice of core node IDs.
 // The returned slice is not copied for each call, and so must not be modified.
 func CoreNodes() []uint16 {
 	return coreNodeIds
 }
 
-// Returns a slice of all client node IDs.
+// Returns a slice of client node IDs.
 // The returned slice is not copied for each call, and so must not be modified.
 func ClientNodes() []uint16 {
 	return clientNodeIds
