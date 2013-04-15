@@ -100,9 +100,9 @@ func Listen(protocol int, handler func(id uint16, conn *BaseConn)) {
 			}
 
 			// No matching node found. Close the connection.
-	                if !matched {
-        	                tlsConn.Close()
-                	}
+			if !matched {
+				tlsConn.Close()
+			}
 		}
 	}
 }
