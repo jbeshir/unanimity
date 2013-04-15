@@ -40,7 +40,7 @@ func Dial(protocol int, id uint16) (*BaseConn, error) {
 // Blocks listening for connections of that given protocol type,
 // and calls the specified handler when one is received,
 // passing the node ID of the connecting node, or 0 for the Client Protocol.
-func Listen(protocol int, handler func(id uint16, conn *BaseConn)) {
+func Listen(protocol int, handler func(id uint16, b *BaseConn)) {
 
 	ip := config.NodeIP(config.Id())
 	ipStr := ip.String()
@@ -91,10 +91,10 @@ func Listen(protocol int, handler func(id uint16, conn *BaseConn)) {
 					continue
 				}
 
-				// Matched the node. Call our handler.
+				// Matched the node. Start the handler.
 				if len(chains) > 0 {
 					matched = true
-					handler(node, newBaseConn(tlsConn))
+					go handler(node, newBaseConn(tlsConn))
 					break
 				}
 			}
@@ -103,6 +103,10 @@ func Listen(protocol int, handler func(id uint16, conn *BaseConn)) {
 			if !matched {
 				tlsConn.Close()
 			}
+		} else {
+			// We don't authenticate clients.
+			// Just run the handler.
+			handler(0, newBaseConn(tlsConn))
 		}
 	}
 }

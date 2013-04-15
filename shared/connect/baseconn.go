@@ -196,12 +196,13 @@ func (b *BaseConn) writeLoop() {
 	var negotiationDone bool
 	var waitingMsgs []*baseproto.Message
 
+mainloop:
 	for {
 		if !negotiationDone {
 			select {
 			case <-b.stop:
 				// The stop channel closing indicates a close.
-				break
+				break mainloop
 
 			case msg := <-b.send:
 				// Put messages to send into the waiting queue.
@@ -216,14 +217,14 @@ func (b *BaseConn) writeLoop() {
 				capMsg := new(baseproto.Capabilities)
 				err := proto.Unmarshal(msg.Content, capMsg)
 				if err != nil {
-					break
+					break mainloop
 				}
 				negotiationDone = true
 
 				// Send waiting messages.
 				for _, msg := range waitingMsgs {
 					if err := b.writeMsg(msg); err != nil {
-						break
+						break mainloop
 					}
 				}
 				waitingMsgs = nil
@@ -233,11 +234,14 @@ func (b *BaseConn) writeLoop() {
 			select {
 			case <-b.stop:
 				// The stop channel closing indicates a close.
-				break
+				break mainloop
 
 			case msg := <-b.send:
 				// Send requested messages.
-				b.writeMsg(msg)
+				err := b.writeMsg(msg)
+				if err != nil {
+					break mainloop
+				}
 			}
 		}
 	}
@@ -256,6 +260,7 @@ func (b *BaseConn) writeCapabilities() error {
 	capMsg := new(baseproto.Capabilities)
 
 	msg := new(baseproto.Message)
+	msg.MsgType = new(uint32)
 	*msg.MsgType = 1
 
 	var err error
