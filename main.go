@@ -16,7 +16,7 @@ import (
 
 import (
 	"github.com/jbeshir/unanimity/config"
-	_ "github.com/jbeshir/unanimity/shared/connect"
+	"github.com/jbeshir/unanimity/shared"
 )
 
 func main() {
@@ -43,6 +43,8 @@ func main() {
 
 	// TODO: Start unanimity node.
 	fmt.Printf("Loaded configuration, our ID is %d.\n", config.Id())
+	shared.Startup()
+	select { }
 }
 
 func loadConfig() {
