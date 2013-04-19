@@ -4,7 +4,7 @@
 	requiring reliable persistence.
 
 	Handles executing instructions once they are known to be chosen,
-	as well as automatically removing earlier instructions. 
+	as well as automatically removing earlier instructions.
 
 	Provides a startup function, functions to read and set state,
 	and transactions and locks for atomically performing sequences of
@@ -21,15 +21,15 @@ package store
 
 type Change struct {
 	TargetEntity uint64
-	Key string
-	Value string
+	Key          string
+	Value        string
 }
 
 type ChangeRequest struct {
 	RequestEntity uint64
-	RequestNode uint16
-	RequestId uint64
-	Changeset []Change
+	RequestNode   uint16
+	RequestId     uint64
+	Changeset     []Change
 }
 
 var transactionToken chan bool

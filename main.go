@@ -44,7 +44,7 @@ func main() {
 	// TODO: Start unanimity node.
 	fmt.Printf("Loaded configuration, our ID is %d.\n", config.Id())
 	shared.Startup()
-	select { }
+	select {}
 }
 
 func loadConfig() {

@@ -111,6 +111,11 @@ func (i *InstructionValue) Choose() {
 	i.acceptedBy = nil
 
 	// TODO: Handle the addition of a new chosen instruction.
+
+	// Call instruction chosen callbacks.
+	for _, cb := range chosenCallbacks {
+		cb(i.slot)
+	}
 }
 
 // Returns the instruction slots.
