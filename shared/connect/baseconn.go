@@ -302,6 +302,26 @@ func (b *BaseConn) Send(msg *baseproto.Message) {
 	}
 }
 
+// Serialises the given protobuf message as the content of a new message,
+// with the given message type, and sends that message on the connection,
+// via Send(). Closes the connection if msg won't serialise.
+// Convenience method.
+func (b *BaseConn) SendProto(msgType uint32, msg proto.Message) {
+
+	content, err := proto.Marshal(msg)
+	if err != nil {
+		b.Close()
+		return
+	}
+
+	baseMsg := new(baseproto.Message)
+	baseMsg.MsgType = new(uint32)
+	*baseMsg.MsgType = msgType
+	baseMsg.Content = content
+
+	b.Send(baseMsg)
+}
+
 // Close the connection.
 // May safely be called more than once, and concurrently with Send()
 func (b *BaseConn) Close() {

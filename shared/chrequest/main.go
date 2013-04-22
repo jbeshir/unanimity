@@ -25,7 +25,7 @@ type receivedConn struct {
 }
 
 type chosenInstruction struct {
-	slot uint64
+	slot     uint64
 	waitChan chan bool
 }
 

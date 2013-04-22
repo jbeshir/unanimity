@@ -1,13 +1,8 @@
 package chrequest
 
 import (
-	"code.google.com/p/goprotobuf/proto"
-)
-
-import (
 	"github.com/jbeshir/unanimity/shared/chrequest/chproto"
 	"github.com/jbeshir/unanimity/shared/connect"
-	"github.com/jbeshir/unanimity/shared/connect/baseproto"
 )
 
 // May only be accessed by the processing goroutine.
@@ -31,23 +26,6 @@ func sendForward(node uint16, forward *chproto.ChangeForward) {
 		connections[node] = append(connections[node], conn)
 		go handleConn(node, conn)
 	}
-	
-	sendToConn(connections[node][0], 2, forward)
-}
 
-// Sends the given change protocol message to the given node.
-func sendToConn(conn *connect.BaseConn, msgType uint32, msg proto.Message) {
-
-	content, err := proto.Marshal(msg)
-	if err != nil {
-		conn.Close()
-		return
-	}
-
-	baseMsg := new(baseproto.Message)
-	baseMsg.MsgType = new(uint32)
-	*baseMsg.MsgType = msgType
-	baseMsg.Content = content
-
-	conn.Send(baseMsg)
+	connections[node][0].SendProto(2, forward)
 }

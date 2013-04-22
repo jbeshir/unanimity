@@ -12,11 +12,11 @@ import (
 
 type receivedForward struct {
 	forward *chproto.ChangeForward
-	node uint16
+	node    uint16
 }
 
 type receivedAck struct {
-	ack *chproto.ChangeForwardAck
+	ack  *chproto.ChangeForwardAck
 	node uint16
 }
 
@@ -70,7 +70,7 @@ func handleMsg(node uint16, conn *connect.BaseConn, msg *baseproto.Message) {
 		ack := new(chproto.ChangeForwardAck)
 		ack.RequestNode = forward.Request.RequestNode
 		ack.RequestId = forward.Request.RequestId
-		sendToConn(conn, 3, ack)
+		conn.SendProto(3, ack)
 
 		// Send the forward message to our processing goroutine.
 		receivedForwardCh <- receivedForward{forward: forward,

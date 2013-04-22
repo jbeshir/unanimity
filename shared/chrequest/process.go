@@ -55,7 +55,7 @@ func process() {
 			processForward(timeout.forward)
 
 		// New Change Request
-		case newRequest := <- newRequestCh:
+		case newRequest := <-newRequestCh:
 
 			requestTimeoutLock.Lock()
 
