@@ -16,7 +16,7 @@ import (
 
 import (
 	"github.com/jbeshir/unanimity/config"
-	"github.com/jbeshir/unanimity/shared"
+	"github.com/jbeshir/unanimity/core"
 )
 
 func main() {
@@ -43,7 +43,11 @@ func main() {
 
 	// TODO: Start unanimity node.
 	fmt.Printf("Loaded configuration, our ID is %d.\n", config.Id())
-	shared.Startup()
+	if config.IsCore() {
+		core.Startup()
+	} else {
+		panic("Client node not implemented yet")
+	}
 	select {}
 }
 
