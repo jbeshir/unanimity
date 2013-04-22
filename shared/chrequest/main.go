@@ -8,7 +8,7 @@
 	react to newly added instructions.
 
 	Provides a startup function, methods to create new change requests
-	and a change channel to receive change requests that this node is
+	and a change callback to receive change requests that this node is
 	the leader for, applicable only to core nodes.
 */
 package chrequest
