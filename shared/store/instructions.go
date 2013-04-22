@@ -65,7 +65,7 @@ func (i *InstructionValue) ChangeRequest() *ChangeRequest {
 // and automatically cause it to be applied to state once all
 // previous instruction slots have a chosen value.
 func (i *InstructionValue) Accept(id uint16, proposal uint64, leader uint16) {
-	if compareProposals(proposal, id, i.latestProposal, i.latestLeader) {
+	if CompareProposals(proposal, id, i.latestProposal, i.latestLeader) {
 		i.latestProposal = proposal
 		i.latestLeader = leader
 	}
@@ -116,6 +116,11 @@ func (i *InstructionValue) Choose() {
 	for _, cb := range chosenCallbacks {
 		cb(i.slot)
 	}
+}
+
+// Returns whether we are currently degraded.
+func Degraded() bool {
+	return degraded
 }
 
 // Returns the instruction slots.
@@ -190,17 +195,38 @@ func AddInstructionValue(slot uint64, req *ChangeRequest) *InstructionValue {
 // Sets the node's degraded status to true, with all the consequences of that.
 func Degrade() {
 	degraded = true
+
+	// Clear all data.
+	Global = newStore()
+	entityMap = make(map[uint64]*Store)
+	for i := range slots {
+		slots[i] = nil
+	}
+
+	// Run callbacks for when we change degraded status.
+	for _, cb := range degradedCallbacks {
+		cb()
+	}
 }
 
-// Sets the node's new start and first unapplied instruction number.
-// May only be called while degraded.
-func SetFreshStart(start uint64) {
+// Completes a burst. The change requests given are assumed to be idempotent,
+// and are applied to state. The start instruction is set to the passed number.
+// Takes the node out of degraded state.
+func EndBurst(start uint64, chrequests []ChangeRequest) {
 	if !degraded {
 		panic("tried to set start instruction number while !degraded")
 	}
 
+	// TODO: Apply idempotent changesets.
+
 	setInstructionStart(start)
 	firstUnapplied = start
+	degraded = false
+
+	// Run callbacks for when we change degraded status.
+	for _, cb := range degradedCallbacks {
+		cb()
+	}
 }
 
 // Sets the node's start instruction number.
@@ -231,7 +257,8 @@ func setInstructionStart(newStart uint64) {
 
 // Returns whether the Paxos round represented by proposal1 and leader1 is
 // higher than that represented by proposal2 and leader2.
-func compareProposals(proposal1 uint64, leader1 uint16,
+// Does not read or write to store state.
+func CompareProposals(proposal1 uint64, leader1 uint16,
 	proposal2 uint64, leader2 uint16) bool {
 
 	if proposal1 > proposal2 {

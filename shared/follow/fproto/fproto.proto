@@ -1,0 +1,54 @@
+message Change {
+	required uint64 targetEntity = 1;
+	required string key = 2;
+	required string value = 3;
+}
+
+message ChangeRequest {
+	required uint64 requestEntity = 1;
+	required uint32 requestNode = 2;
+	required uint64 requestId = 3;
+	repeated Change changeset = 4;
+}
+
+message Position {
+	required uint64 firstUnapplied = 1;
+	required bool degraded = 2;
+}
+
+message GlobalProperty {
+	required string key = 1;
+	required string value = 2;
+}
+
+message EntityProperty {
+	required uint64 entity = 1;
+	required string key = 2;
+	required string value = 3;
+}
+
+message BurstDone {
+	required uint64 firstUnapplied = 1;
+}
+
+message InstructionChosen {
+	required uint64 slot = 1;
+}
+
+message InstructionRequest {
+	required uint64 slot = 1;
+}
+
+message InstructionData {
+	required uint64 slot = 1;
+	required ChangeRequest request = 4;
+}
+
+message FirstUnapplied {
+	required uint64 firstUnapplied = 1;
+}
+
+message Leader {
+	required uint64 proposal = 1;
+	required uint32 leader = 2;
+}

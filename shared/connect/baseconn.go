@@ -290,15 +290,21 @@ func (b *BaseConn) writeMsg(msg *baseproto.Message) error {
 
 // Send a message to the connection.
 // May safely be called multiple times concurrently.
-func (b *BaseConn) Send(msg *baseproto.Message) {
+//
+// Returns false if it knows for sure that the connection is closed,
+// and the message was dropped. This is a *hint*, only,
+// to allow avoiding excessive writes to closed connections,
+// and cannot be relied upon.
+func (b *BaseConn) Send(msg *baseproto.Message) bool {
+
 	select {
-	case <-b.Disconnected:
-		// This base connection has shut down.
-		return
+	case <-b.disconnected:
+		// this base connection has shut down.
+		return false
 
 	case b.send <- msg:
 		// Message given to write goroutine to send.
-		return
+		return true
 	}
 }
 
@@ -306,12 +312,12 @@ func (b *BaseConn) Send(msg *baseproto.Message) {
 // with the given message type, and sends that message on the connection,
 // via Send(). Closes the connection if msg won't serialise.
 // Convenience method.
-func (b *BaseConn) SendProto(msgType uint32, msg proto.Message) {
+func (b *BaseConn) SendProto(msgType uint32, msg proto.Message) bool {
 
 	content, err := proto.Marshal(msg)
 	if err != nil {
 		b.Close()
-		return
+		return false
 	}
 
 	baseMsg := new(baseproto.Message)
@@ -319,7 +325,7 @@ func (b *BaseConn) SendProto(msgType uint32, msg proto.Message) {
 	*baseMsg.MsgType = msgType
 	baseMsg.Content = content
 
-	b.Send(baseMsg)
+	return b.Send(baseMsg)
 }
 
 // Close the connection.

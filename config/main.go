@@ -12,10 +12,14 @@
 */
 package config
 
+import (
+	"time"
+)
+
 // The timeout period allowed for round trip communications, in nanoseconds.
 // This is an estimated reasonable default for most circumstances.
-const ROUND_TRIP_TIMEOUT_PERIOD = 5 * 1e9
+const ROUND_TRIP_TIMEOUT_PERIOD time.Duration = 5 * time.Second
 
 // The timeout period allowed for a full change to occur, in nanoseconds.
 // This may take up to six communication delays, or three round trips.
-const CHANGE_TIMEOUT_PERIOD = 3 * ROUND_TRIP_TIMEOUT_PERIOD
+const CHANGE_TIMEOUT_PERIOD time.Duration = 3 * ROUND_TRIP_TIMEOUT_PERIOD

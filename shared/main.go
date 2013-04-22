@@ -6,6 +6,7 @@ package shared
 
 import (
 	"github.com/jbeshir/unanimity/shared/chrequest"
+	"github.com/jbeshir/unanimity/shared/follow"
 	"github.com/jbeshir/unanimity/shared/store"
 )
 
@@ -15,4 +16,5 @@ func Startup() {
 
 	// Initialise change request and follow protocol handling.
 	chrequest.Startup()
+	follow.Startup()
 }
