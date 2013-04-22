@@ -27,5 +27,8 @@ _testmain.go
 *.crt
 unanimity.conf
 
+# ctags files
+tags
+
 # Compiled executable
 unanimity
