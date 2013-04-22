@@ -1,0 +1,22 @@
+message Change {
+	required uint64 targetEntity = 1;
+	required string key = 2;
+	required string value = 3;
+}
+
+message ChangeRequest {
+	required uint64 requestEntity = 1;
+	required uint32 requestNode = 2;
+	required uint64 requestId = 3;
+	repeated Change changeset = 4;
+}
+
+message ChangeForward {
+	required ChangeRequest request = 1;
+	repeated uint32 ignores = 2;
+}
+
+message ChangeForwardAck {
+	required uint32 requestNode = 1;
+	required uint64 requestId = 2;
+}
