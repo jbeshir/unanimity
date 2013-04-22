@@ -82,6 +82,7 @@ func cancelRequestTimeout(requestNode uint16, requestId uint64) {
 
 	if v, exists := requestTimeouts[key]; exists {
 		v.canceled = true
+		v.timer.Stop()
 		delete(requestTimeouts, key)
 	}
 }
@@ -127,6 +128,7 @@ func cancelForwardTimeout(requestNode uint16, requestId uint64) {
 
 	if v, exists := forwardTimeouts[key]; exists {
 		v.canceled = true
+		v.timer.Stop()
 		delete(forwardTimeouts, key)
 	}
 }
