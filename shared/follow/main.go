@@ -14,15 +14,10 @@ import (
 	"github.com/jbeshir/unanimity/shared/connect"
 )
 
-// Must be unbuffered.
-// This ensures that we block until the processing goroutine has received
-// the message, which ensures any terminate message arrives after the
-// received message.
 var receivedConnCh chan *followConn
 
 func init() {
-	// Unbuffered.
-	receivedConnCh = make(chan *followConn)
+	receivedConnCh = make(chan *followConn, 100)
 }
 
 func Startup() {
