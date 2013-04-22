@@ -263,7 +263,7 @@ func CompareProposals(proposal1 uint64, leader1 uint16,
 
 	if proposal1 > proposal2 {
 		return true
-	} else if proposal1 == proposal2 && leader1 > leader2 {
+	} else if proposal1 == proposal2 && leader1 >= leader2 {
 		return true
 	}
 
