@@ -42,6 +42,10 @@ func process() {
 			if !store.Degraded() {
 				if config.IsCore() {
 					for _, node := range coreNodes {
+						if node == config.Id() {
+							continue
+						}
+
 						if connections[node] == nil {
 							go tryOutgoing(node)
 						}
