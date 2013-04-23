@@ -198,6 +198,10 @@ func process() {
 				processPromise(node, conn, msg.Content)
 			case 4:
 				processAccept(node, conn, msg.Content)
+			case 5:
+				processAccepted(node, conn, msg.Content)
+			case 6:
+				processNack(node, conn, msg.Content)
 			default:
 				// Unknown message.
 				conn.Close()
