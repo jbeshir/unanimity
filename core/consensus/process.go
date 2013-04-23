@@ -22,7 +22,7 @@ var connections map[uint16][]*connect.BaseConn
 var receivedPromises map[uint16]*coproto.Promise
 
 // Can only be accessed inside a transaction.
-var waitingRequests []*coproto.ChangeRequest
+var waitingRequests []*store.ChangeRequest
 
 // Can only be accessed inside a transaction.
 var amLeader bool
@@ -85,10 +85,9 @@ func process() {
 			store.StartTransaction()
 
 			if !amLeader && receivedPromises != nil {
-				waitingRequests = append(waitingRequests, makeIntChangeRequest(req))
+				waitingRequests = append(waitingRequests, req)
 			} else if !amLeader {
-				waitingRequests = append(waitingRequests,
-					makeIntChangeRequest(req))
+				waitingRequests = append(waitingRequests, req)
 
 				// Start attempting to be leader.
 				m := make(map[uint16]*coproto.Promise)
@@ -136,31 +135,7 @@ func process() {
 				inst := makeInst(newSlot, proposal, leader,
 					req)
 
-				// Send accept messages to all other core nodes.
-				var accept coproto.Accept
-				accept.Proposal = new(uint64)
-				*accept.Proposal = proposal
-				accept.Instruction = inst
-
-				for _, node := range config.CoreNodes() {
-					if node == config.Id() {
-						continue
-					}
-
-					if len(connections[node]) != 0 {
-						c := connections[node][0]
-						c.SendProto(4, &accept)
-					}
-				}
-
-				// Behave as if we got an accepted
-				// message from ourselves.
-				var accepted coproto.Accepted
-				accepted.Proposal = accept.Proposal
-				accepted.Leader = new(uint32)
-				*accepted.Leader = uint32(leader)
-				accepted.Instruction = inst
-				addAccepted(config.Id(), &accepted)
+				sendProposal(inst)
 			}
 
 			store.EndTransaction()
@@ -305,6 +280,9 @@ func processPrepare(node uint16, conn *connect.BaseConn, content []byte) {
 				}
 			}
 		}
+
+		// Send promise message.
+		conn.SendProto(3, &promise)
 
 		// Accept the other node as our new leader.
 		store.SetProposal(newProposal, newLeader)
@@ -468,7 +446,120 @@ func stopBeingLeader() {
 func addPromise(node uint16, msg *coproto.Promise) {
 	receivedPromises[node] = msg
 
-	// TODO: BECOME LEADER
+	// If we have promises from a majority of core nodes,
+	// become leader.
+	if len(receivedPromises) > len(config.CoreNodes())/2 {
+
+		stopLeaderTimeout()
+		amLeader = true
+		proposal, leader := store.Proposal()
+
+		// Find a slot number above all those in promise messages,
+		// and above our first unapplied.
+		firstUnapplied := store.InstructionFirstUnapplied()
+		limit := firstUnapplied
+		for _, msg := range receivedPromises {
+			for _, accepted := range msg.Accepted {
+				if *accepted.Slot >= limit {
+					limit = *accepted.Slot + 1
+				}
+			}
+		}
+
+		// Start our next slot after the limit.
+		nextProposalSlot = limit
+
+		// For all slots between this and our first unapplied,
+		// submit a previously accepted instruction unless we
+		// know an instruction was already chosen.
+		// Fills these slots with proposals.
+		// This is O(n^2) in the number of instructions between our
+		// first unapplied and limit.
+		// TODO: Improve worst-case complexity.
+		start := store.InstructionStart()
+		slots := store.InstructionSlots()
+		for i := firstUnapplied; i < limit; i++ {
+
+			// If we already have a chosen instruction, skip.
+			rel := int(i - start)
+			if len(slots[rel]) == 1 && slots[rel][0].IsChosen() {
+				continue
+			}
+
+			// Find the previously accepted instruction
+			// accepted with the highest proposal number.
+			var bestInst *coproto.Instruction
+			var bp uint64 // Best proposal
+			var bl uint16 // Best leader
+
+			for _, msg := range receivedPromises {
+				for _, accepted := range msg.Accepted {
+					if *accepted.Slot != i {
+						continue
+					}
+					if bestInst == nil {
+						bestInst = accepted
+						bp = *accepted.Proposal
+						bl = uint16(*accepted.Leader)
+						continue
+					}
+
+					// TODO: This indent is just absurd.
+					p := *accepted.Proposal
+					l := uint16(*accepted.Leader)
+					if store.CompareProposals(p, l,
+						bp, bl) {
+						bestInst = accepted
+						bp = *accepted.Proposal
+						bl = uint16(*accepted.Leader)
+					}
+				}
+			}
+
+			// If we didn't find an instruction, make an empty one.
+			if bestInst == nil {
+				empty := new(coproto.ChangeRequest)
+				empty.RequestEntity = new(uint64)
+				empty.RequestNode = new(uint32)
+				*empty.RequestEntity = uint64(config.Id())
+				*empty.RequestNode = uint32(config.Id())
+
+				bestInst := new(coproto.Instruction)
+				bestInst.Slot = new(uint64)
+				*bestInst.Slot = i
+				bestInst.Request = empty
+			}
+
+			// Add proposal timeout.
+			req := makeExtChangeRequest(bestInst.Request)
+			addProposalTimeout(i, req)
+
+			// Send proposal.
+			bestInst.Proposal = new(uint64)
+			bestInst.Leader = new(uint32)
+			*bestInst.Proposal = proposal
+			*bestInst.Leader = uint32(leader)
+			sendProposal(bestInst)
+		}
+
+		// Discard received promise messages.
+		receivedPromises = nil
+
+		// Make an instruction proposal for each waiting change.
+		for _, req := range waitingRequests {
+			slot := nextProposalSlot
+			nextProposalSlot++
+
+			addProposalTimeout(slot, req)
+
+			inst := makeInst(slot, proposal, leader, req)
+
+			sendProposal(inst)
+		}
+
+		// Clear waiting changes.
+		waitingRequests = nil
+	}
 }
 
 // Must be called from the processing goroutine, inside a transaction.
@@ -513,6 +604,42 @@ func addAccepted(node uint16, accepted *coproto.Accepted) bool {
 	newInst.Accept(node, msgProposal, msgLeader)
 
 	return true
+}
+
+// May only be called by the processing goroutine, in a transaction.
+func sendProposal(inst *coproto.Instruction) {
+
+	// We must be leader.
+	proposal, leader := store.Proposal()
+	if leader != config.Id() || !amLeader {
+		panic("tried to send accept messages while not leader")
+	}
+
+	// Send accept messages to all other core nodes.
+	var accept coproto.Accept
+	accept.Proposal = new(uint64)
+	*accept.Proposal = proposal
+	accept.Instruction = inst
+
+	for _, node := range config.CoreNodes() {
+		if node == config.Id() {
+			continue
+		}
+
+		if len(connections[node]) != 0 {
+			c := connections[node][0]
+			c.SendProto(4, &accept)
+		}
+	}
+
+	// Behave as if we got an accepted
+	// message from ourselves.
+	var accepted coproto.Accepted
+	accepted.Proposal = accept.Proposal
+	accepted.Leader = new(uint32)
+	*accepted.Leader = uint32(leader)
+	accepted.Instruction = inst
+	addAccepted(config.Id(), &accepted)
 }
 
 func appendInst(list *[]*coproto.Instruction, slot uint64,
