@@ -1,0 +1,51 @@
+message AuthenticateFailed {
+	required string reason = 1;
+}
+
+message AuthenticationSuccess {
+	required uint64 sessionId = 1;
+	required string password = 2;
+}
+
+message FollowFailed {
+	required uint64 firstUnapplied = 1;
+	required string username = 2;
+	required string reason = 3;
+}
+
+message Following {
+	required uint64 firstUnapplied = 1;
+	required string username = 2;
+	required uint64 userId = 3;
+}
+
+message UserData {
+	required uint64 firstUnapplied = 1;
+	required uint64 userId = 2;
+	required string key = 3;
+	required string value = 4;
+}
+
+message UserDataDone {
+	required uint64 firstUnapplied = 1;
+	required uint64 userId = 2;
+}
+
+message UserDataChange {
+	required uint64 firstUnapplied = 1;
+	required uint64 userId = 2;
+	required string key = 3;
+	required string value = 4;
+}
+
+message StoppedFollowing {
+	required uint64 userId = 1;
+	required string reason = 2;
+}
+
+message Received {
+	required uint64 senderUserId = 1;
+	required uint64 senderSessionId = 2;
+	required string tag = 3;
+	required string content = 4;
+}

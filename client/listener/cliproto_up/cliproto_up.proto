@@ -1,0 +1,23 @@
+message Authenticate {
+	required string username = 1;
+	required string password = 2;
+	required uint64 sessionId = 3;
+}
+
+message FollowUsername {
+	required string username = 1;
+}
+
+message FollowUser {
+	required uint64 userId = 1;
+}
+
+message StopFollowingUser {
+	required uint64 userId = 1;
+}
+
+message Send {
+	required uint64 recipient = 1;
+	required string tag = 2;
+	required string content = 3;
+}
