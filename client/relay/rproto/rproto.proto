@@ -1,0 +1,7 @@
+message Forward {
+	required uint32 ttl = 1;
+	required uint64 sender = 2;
+	required uint64 recipient = 3;
+	required string tag = 4;
+	required string content = 5;
+}
