@@ -7,6 +7,7 @@
 package core
 
 import (
+	"github.com/jbeshir/unanimity/core/consensus"
 	"github.com/jbeshir/unanimity/shared"
 )
 
@@ -14,4 +15,7 @@ func Startup() {
 
 	// Startup shared functionality.
 	shared.Startup()
+
+	// Start consensus protocol handling.
+	consensus.Startup()
 }

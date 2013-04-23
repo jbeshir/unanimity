@@ -1,0 +1,48 @@
+message Change {
+	required uint64 targetEntity = 1;
+	required string key = 2;
+	required string value = 3;
+}
+
+message ChangeRequest {
+	required uint64 requestEntity = 1;
+	required uint32 requestNode = 2;
+	required uint64 requestId = 3;
+	repeated Change changeset = 4;
+}
+
+message Instruction {
+	required uint64 slot = 1;
+	required uint64 proposal = 2;
+	required uint32 leader = 3;
+	required ChangeRequest request = 4;
+}
+
+message Prepare {
+	required uint64 proposal = 1;
+	required uint64 firstUnapplied = 2;
+}
+
+message Promise {
+	required uint64 proposal = 1;
+	required uint32 leader = 2;
+	required uint64 prevProposal = 3;
+	required uint32 prevLeader = 4;
+	repeated Instruction accepted = 5;
+}
+
+message Accept {
+	required uint64 proposal = 1;
+	required Instruction instruction = 2;
+}
+
+message Accepted {
+	required uint64 proposal = 1;
+	required uint32 leader = 2;
+	required Instruction instruction = 3;
+}
+
+message Nack {
+	required uint64 proposal = 1;
+	required uint32 leader = 2;
+}
