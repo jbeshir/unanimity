@@ -267,17 +267,36 @@ func sendAuthSuccess(conn *userConn, password string) {
 // attached to user entity, this node ID attached to it.
 // And the session then set as transient.
 func makeNewSessionRequest(userId uint64) *store.ChangeRequest {
-	chset := make([]store.Change, 2)
+	chset := make([]store.Change, 5)
 
-	// Create session entity.
+	// Create new entity.
 	// Entity ID 1 now refers to this within the changeset.
 	chset[0].TargetEntity = 1
 	chset[0].Key = "id"
-	chset[0].Value = strconv.FormatUint(1, 10)
+	chset[0].Value = strconv.FormatUint(chset[0].TargetEntity, 10)
+
+	// Make new entity a session entity.
+	chset[1].TargetEntity = 1
+	chset[1].Key = "type"
+	chset[1].Value = "session"
 
 	// Attach session entity to user.
-	// TODO: INCOMPLETE AND WILL CRASH
-	return nil
+	chset[2].TargetEntity = userId
+	chset[2].Key = "attach 1"
+	chset[2].Value = "true"
+
+	// Attach node ID to session entity.
+	idStr := strconv.FormatUint(uint64(config.Id()), 10)
+	chset[3].TargetEntity = 1
+	chset[3].Key = "attach " + idStr
+	chset[3].Value = "true"
+
+	// Set session entity as transient.
+	chset[4].TargetEntity = 1
+	chset[4].Key = "transient"
+	chset[4].Value = "true"
+
+	return makeRequest(chset)
 }
 
 // Must be called from inside a transaction.
