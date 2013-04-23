@@ -34,6 +34,8 @@ type ChangeRequest struct {
 
 var transactionToken chan bool
 
+var usedRequestIds uint64
+
 func Startup() {
 	transactionToken = make(chan bool, 1)
 	transactionToken <- true
@@ -58,4 +60,11 @@ func EndTransaction() {
 	// STUB
 
 	transactionToken <- true
+}
+
+// Returns a new request ID, never before used.
+// Must be called inside a transaction.
+func AllocateRequestId() uint64 {
+	usedRequestIds++
+	return usedRequestIds
 }

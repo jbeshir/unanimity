@@ -12,8 +12,10 @@ import (
 )
 
 import (
+	"github.com/jbeshir/unanimity/config"
 	"github.com/jbeshir/unanimity/client/listener/cliproto_down"
 	"github.com/jbeshir/unanimity/client/listener/cliproto_up"
+	"github.com/jbeshir/unanimity/shared/chrequest"
 	"github.com/jbeshir/unanimity/shared/store"
 )
 
@@ -104,20 +106,35 @@ func handleAuth(conn *userConn, content []byte) {
 			// The session does exist.
 			conn.session = *msg.SessionId
 
-			// TODO: If this node already attached to session,
-			// drop other connection.
-			// Otherwise, create change attaching this node ID
-			// to the session.
+			// TODO: If this node is already attached to
+			// the session, drop the other connection.
+			if false {
+				// Not done yet.
+			} else {
+				// Create change attaching this node ID
+				// to the session.
+				id := config.Id()
+				idStr := strconv.FormatUint(uint64(id), 10)
+
+				chset := make([]store.Change, 1)
+				chset[0].TargetEntity = conn.session
+				chset[0].Key = "attach " + idStr
+				chset[0].Value = "true"
+				req := makeRequest(chset)
+				go chrequest.Request(req)
+			}
 
 			// Tell the client they authenticated successfully.
 			sendAuthSuccess(conn, "")
 		} else {
 			// They are creating a new session.
+			req := makeNewSessionRequest(userId)
+			go chrequest.Request(req)
 
-			// TODO: Create change creating new session entity,
-			// attached to user entity, this node ID attached to it.
-			// And the session then set as transient.
 			// Stuff details in waiting auth.
+			conn.waitingAuth = new(authData)
+			conn.waitingAuth.msg = msg
+			conn.waitingAuth.requestId = req.RequestId
 		}
 	} else {
 		// The user does not already exist.
@@ -244,4 +261,32 @@ func sendAuthSuccess(conn *userConn, password string) {
 	*msg.Password = password
 
 	conn.conn.SendProto(3, &msg)
+}
+
+// Create change request creating new session entity,
+// attached to user entity, this node ID attached to it.
+// And the session then set as transient.
+func makeNewSessionRequest(userId uint64) *store.ChangeRequest {
+	chset := make([]store.Change, 2)
+
+	// Create session entity.
+	// Entity ID 1 now refers to this within the changeset.
+	chset[0].TargetEntity = 1
+	chset[0].Key = "id"
+	chset[0].Value = strconv.FormatUint(1, 10)
+
+	// Attach session entity to user.
+	// TODO: INCOMPLETE AND WILL CRASH
+	return nil
+}
+
+// Must be called from inside a transaction.
+func makeRequest(changes []store.Change) *store.ChangeRequest {
+	req := new(store.ChangeRequest)
+	req.RequestEntity = uint64(config.Id())
+	req.RequestNode = config.Id()
+	req.RequestId = store.AllocateRequestId()
+	req.Changeset = changes
+
+	return req
 }
