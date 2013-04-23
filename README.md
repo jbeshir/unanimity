@@ -7,5 +7,5 @@ This implementation may be used as guidance for implementing a more hardened sys
 
 Implemented in Go, targeting Go 1.1 at present. Depends on the following:
 
-"code.google.com/p/goprotobuf/proto" - Go support for Google protocol buffers.
-"code.google.com/p/go.crypto/scrypt" - Implementation of the scrypt password hashing algorithm. Used for password hashes.
+* "code.google.com/p/goprotobuf/proto" - Go support for Google protocol buffers.
+* "code.google.com/p/go.crypto/scrypt" - Implementation of the scrypt password hashing algorithm. Used for password hashes.
