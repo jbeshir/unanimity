@@ -20,6 +20,8 @@ var tryOutgoingCh <-chan time.Time
 var processRand *rand.Rand
 
 func init() {
+	connections = make(map[uint16]*followConn)
+
 	newTryOutgoingCh := make(chan time.Time, 1)
 	newTryOutgoingCh <- time.Now()
 	tryOutgoingCh = newTryOutgoingCh
