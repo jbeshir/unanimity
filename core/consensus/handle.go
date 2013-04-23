@@ -8,7 +8,7 @@ import (
 type receivedMsg struct {
 	node uint16
 	conn *connect.BaseConn
-	msg *baseproto.Message
+	msg  *baseproto.Message
 }
 
 var receivedMsgCh chan receivedMsg

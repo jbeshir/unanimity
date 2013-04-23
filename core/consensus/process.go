@@ -1,6 +1,10 @@
 package consensus
 
 import (
+	"time"
+)
+
+import (
 	"code.google.com/p/goprotobuf/proto"
 )
 
@@ -14,8 +18,15 @@ import (
 var connections map[uint16][]*connect.BaseConn
 
 // Non-nil means we're attempting to become leader.
+// Can only be accessed inside a transaction.
 var receivedPromises map[uint16]*coproto.Promise
+
+// Can only be accessed inside a transaction.
+var waitingRequests []*coproto.ChangeRequest
+
+// Can only be accessed inside a transaction.
 var amLeader bool
+var nextProposalSlot uint64 // Set on becoming leader.
 
 // Top-level function of the processing goroutine.
 func process() {
@@ -38,8 +49,160 @@ func process() {
 		connections[node] = append(connections[node], conn)
 	}
 
+	// Retry connections once per config.CHANGE_TIMEOUT_PERIOD.
+	// Largely arbitrary.
+	reconnectTicker := time.Tick(config.CHANGE_TIMEOUT_PERIOD)
+
 	for {
 		select {
+
+		// Connection retry tick.
+		// We should try to make an outgoing connection to any node
+		// that we do not have at least one connection to.
+		case <-reconnectTicker:
+			for _, node := range config.CoreNodes() {
+				if node == config.Id() {
+					continue
+				}
+				if len(connections[node]) > 0 {
+					continue
+				}
+
+				conn, err := connect.Dial(
+					connect.CONSENSUS_PROTOCOL, node)
+				if err != nil {
+					// Can't reach the other node.
+					continue
+				}
+
+				connections[node] =
+					append(connections[node], conn)
+			}
+
+		// New change request, for us to propose as leader.
+		case req := <-newChangeCh:
+
+			store.StartTransaction()
+
+			if !amLeader && receivedPromises != nil {
+				waitingRequests = append(waitingRequests, makeIntChangeRequest(req))
+			} else if !amLeader {
+				waitingRequests = append(waitingRequests,
+					makeIntChangeRequest(req))
+
+				// Start attempting to be leader.
+				m := make(map[uint16]*coproto.Promise)
+				receivedPromises = m
+
+				proposal, _ := store.Proposal()
+				proposal++
+				store.SetProposal(proposal, config.Id())
+				firstUn := store.InstructionFirstUnapplied()
+
+				// Send prepare messages to all other nodes.
+				var prepare coproto.Prepare
+				prepare.Proposal = new(uint64)
+				prepare.FirstUnapplied = new(uint64)
+				*prepare.Proposal = proposal
+				*prepare.FirstUnapplied = firstUn
+
+				for _, node := range config.CoreNodes() {
+					if node == config.Id() {
+						continue
+					}
+
+					if len(connections[node]) != 0 {
+						c := connections[node][0]
+						c.SendProto(2, &prepare)
+					}
+				}
+
+				// Behave as if we got a promise message
+				// from ourselves.
+				var promise coproto.Promise
+				promise.Proposal = prepare.Proposal
+				promise.PrevProposal = promise.Proposal
+				promise.Leader = new(uint32)
+				*promise.Leader = uint32(config.Id())
+				promise.PrevLeader = promise.Leader
+				addPromise(config.Id(), &promise)
+			} else {
+				newSlot := nextProposalSlot
+				nextProposalSlot++
+
+				addProposalTimeout(newSlot, req)
+
+				proposal, leader := store.Proposal()
+				inst := makeInst(newSlot, proposal, leader,
+					req)
+
+				// Send accept messages to all other core nodes.
+				var accept coproto.Accept
+				accept.Proposal = new(uint64)
+				*accept.Proposal = proposal
+				accept.Instruction = inst
+
+				for _, node := range config.CoreNodes() {
+					if node == config.Id() {
+						continue
+					}
+
+					if len(connections[node]) != 0 {
+						c := connections[node][0]
+						c.SendProto(4, &accept)
+					}
+				}
+
+				// Behave as if we got an accepted
+				// message from ourselves.
+				var accepted coproto.Accepted
+				accepted.Proposal = accept.Proposal
+				accepted.Leader = new(uint32)
+				*accepted.Leader = uint32(leader)
+				accepted.Instruction = inst
+				addAccepted(config.Id(), &accepted)
+			}
+
+			store.EndTransaction()
+
+		// Leadership attempt timed out.
+		case timedOutProposal := <-leaderTimeoutCh:
+
+			store.StartTransaction()
+
+			proposal, leader := store.Proposal()
+
+			// If the proposal has changed since that
+			// leadership attempt, ignore it.
+			if leader != config.Id() {
+				return
+			}
+			if proposal != timedOutProposal {
+				return
+			}
+
+			// If we successfully became leader, ignore it.
+			if amLeader {
+				return
+			}
+
+			// Otherwise, stop our attempt to become leader.
+			stopBeingLeader()
+
+			store.EndTransaction()
+
+		// Proposal timed out.
+		case timeout := <-proposalTimeoutCh:
+
+			store.StartTransaction()
+
+			// If this timeout was not canceled, a proposal failed.
+			// We stop being leader.
+			if proposalTimeouts[timeout.slot] == timeout {
+				stopBeingLeader()
+			}
+
+			store.EndTransaction()
 
 		// New received connection.
 		case receivedConn := <-receivedConnCh:
@@ -163,13 +326,13 @@ func processPromise(node uint16, conn *connect.BaseConn, content []byte) {
 		return
 	}
 
+	store.StartTransaction()
+	defer store.EndTransaction()
+
 	if receivedPromises == nil {
 		// Not attempting to become leader.
 		return
 	}
-
-	store.StartTransaction()
-	defer store.EndTransaction()
 
 	proposal, leader := store.Proposal()
 	if proposal != *msg.Proposal || leader != uint16(*msg.Leader) {
@@ -180,9 +343,7 @@ func processPromise(node uint16, conn *connect.BaseConn, content []byte) {
 		return
 	}
 
-	receivedPromises[node] = &msg
-
-	// TODO: BECOME LEADER
+	addPromise(node, &msg)
 }
 
 // Must be called from the processing goroutine.
@@ -195,7 +356,6 @@ func processAccept(node uint16, conn *connect.BaseConn, content []byte) {
 
 	store.StartTransaction()
 	defer store.EndTransaction()
-
 
 	proposal, leader := store.Proposal()
 	msgProposal, msgLeader := *msg.Proposal, node
@@ -252,7 +412,7 @@ func processAccepted(node uint16, conn *connect.BaseConn, content []byte) {
 		conn.Close()
 		return
 	}
-	
+
 	store.StartTransaction()
 	defer store.EndTransaction()
 
@@ -267,13 +427,13 @@ func processNack(node uint16, conn *connect.BaseConn, content []byte) {
 		return
 	}
 
+	store.StartTransaction()
+	defer store.EndTransaction()
+
 	// If we don't consider ourselves the leader, discard.
 	if !amLeader {
 		return
 	}
-	
-	store.StartTransaction()
-	defer store.EndTransaction()
 
 	msgProposal, msgLeader := *msg.Proposal, uint16(*msg.Leader)
 	proposal, leader := store.Proposal()
@@ -281,10 +441,34 @@ func processNack(node uint16, conn *connect.BaseConn, content []byte) {
 		return
 	}
 	if store.CompareProposals(msgProposal, msgLeader, proposal, leader) {
-		// TODO: STOP BEING LEADER
-
+		stopBeingLeader()
 		store.SetProposal(msgProposal, msgLeader)
 	}
+}
+
+// Stops this node from considering itself the leader,
+// and aborts any attempt to be leader.
+// Does not change our current proposal number and leader node ID.
+// To do that, call store.SetProposal after calling this.
+// Must be called from the processing goroutine, inside a transacton.
+func stopBeingLeader() {
+	amLeader = false
+	store.StopLeading()
+
+	for _, timeout := range proposalTimeouts {
+		timeout.timer.Stop()
+	}
+	proposalTimeouts = make(map[uint64]*proposalTimeout)
+
+	waitingRequests = nil
+	receivedPromises = nil
+}
+
+// Must be called from the processing goroutine, inside a transaction.
+func addPromise(node uint16, msg *coproto.Promise) {
+	receivedPromises[node] = msg
+
+	// TODO: BECOME LEADER
 }
 
 // Must be called from the processing goroutine, inside a transaction.
@@ -335,18 +519,26 @@ func appendInst(list *[]*coproto.Instruction, slot uint64,
 	inst *store.InstructionValue) {
 
 	instProposal, instLeader := inst.Proposal()
+	internalInst := makeInst(slot, instProposal, instLeader,
+		inst.ChangeRequest())
+
+	*list = append(*list, internalInst)
+}
+
+func makeInst(slot uint64, proposal uint64, leader uint16,
+	req *store.ChangeRequest) *coproto.Instruction {
 
 	internalInst := new(coproto.Instruction)
 	internalInst.Slot = new(uint64)
 	internalInst.Proposal = new(uint64)
 	internalInst.Leader = new(uint32)
 	*internalInst.Slot = slot
-	*internalInst.Proposal = instProposal
-	*internalInst.Leader = uint32(instLeader)
+	*internalInst.Proposal = proposal
+	*internalInst.Leader = uint32(leader)
 
-	internalInst.Request = makeIntChangeRequest(inst.ChangeRequest())
+	internalInst.Request = makeIntChangeRequest(req)
 
-	*list = append(*list, internalInst)
+	return internalInst
 }
 
 func makeIntChangeRequest(req *store.ChangeRequest) *coproto.ChangeRequest {

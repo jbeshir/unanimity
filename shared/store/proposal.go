@@ -26,6 +26,16 @@ func SetProposal(newProposal uint64, newLeader uint16) {
 	leader = newLeader
 }
 
+// If the leader ID matches our ID,
+// updates our "last stopped leading" time to now.
+// Call when, whether or not we've a new leader,
+// we consider ourselves to have stopped being the leader.
+func StopLeading() {
+	if leader == config.Id() {
+		lastLeader = time.Now()
+	}
+}
+
 func StoppedLeading() time.Time {
 	return lastLeader
 }
