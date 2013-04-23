@@ -1,6 +1,12 @@
 package listener
 
 import (
+	"crypto/rand"
+	"strconv"
+	"strings"
+)
+
+import (
 	"code.google.com/p/go.crypto/scrypt"
 	"code.google.com/p/goprotobuf/proto"
 )
@@ -55,6 +61,9 @@ func handleAuth(conn *userConn, content []byte) {
 		return
 	}
 
+	// We hold this through quite a lot of logic,
+	// including password hashing, which is useful to parallelise.
+	// TODO: Don't block the whole node for so long here.
 	store.StartTransaction()
 	defer store.EndTransaction()
 
@@ -83,13 +92,139 @@ func handleAuth(conn *userConn, content []byte) {
 
 		// It's the real user.
 		if *msg.SessionId != 0 {
+
 			// They are attaching to an existing session.
+			// Check it exists and is attached to this user.
+			strSessionId := strconv.FormatUint(*msg.SessionId, 10)
+			if user.Value("attach "+strSessionId) == "" {
+				sendAuthFail(conn, "Invalid Session")
+				return
+			}
+
+			// The session does exist.
+			conn.session = *msg.SessionId
+
+			// TODO: If this node already attached to session,
+			// drop other connection.
+			// Otherwise, create change attaching this node ID
+			// to the session.
+
+			// Tell the client they authenticated successfully.
+			sendAuthSuccess(conn, "")
 		} else {
 			// They are creating a new session.
+
+			// TODO: Create change creating new session entity,
+			// attached to user entity, this node ID attached to it.
+			// And the session then set as transient.
+			// Stuff details in waiting auth.
 		}
 	} else {
 		// The user does not already exist.
-		// Perform registration.
+		// Check they weren't trying to attach to a session.
+		if *msg.SessionId != 0 {
+			sendAuthFail(conn, "User Does Not Exist")
+			return
+		}
+
+		// We're creating a new user.
+		newUser := *msg.Username
+		newPass := *msg.Password
+
+		if !strings.HasPrefix(newUser, "Guest-") {
+
+			// We're creating a new non-guest user.
+			// Make sure they have a password.
+			if newPass == "" {
+				sendAuthFail(conn, "No Password")
+				return
+			}
+
+			// Get a cryptographically random salt.
+			saltBytes := make([]byte, 32)
+			read := 0
+			for read != len(saltBytes) {
+				n, err := rand.Read(saltBytes[read:])
+				read += n
+				if err != nil {
+					// Out of random?
+					// TODO: Unsure when this can happen.
+					sendAuthFail(conn, "Try Later")
+					return
+				}
+			}
+
+			// Generate their salted, hashed password.
+			passBytes := []byte(*msg.Password)
+			key, err := scrypt.Key(passBytes, saltBytes, 16384,
+				8, 1, 32)
+			if err != nil {
+				// If you can get here, it's probably
+				// because of a bad password.
+				sendAuthFail(conn, "Invalid Password")
+				return
+			}
+			hash := string(key)
+			salt := string(saltBytes)
+
+			// TODO: Create change creating new user,
+			// new session, attachments as needed.
+			_, _ = hash, salt
+
+			return
+		}
+
+		// We're creating a new guest user.
+		// Guests get automatic passwords, and can't set them.
+		if newPass != "" {
+			sendAuthFail(conn, "Cannot Set Password For Guest User")
+			return
+		}
+
+		// Get a cryptographically random password.
+		passBytes := make([]byte, 128)
+		for read := 0; read != len(passBytes); {
+			n, err := rand.Read(passBytes[read:])
+			read += n
+			if err != nil {
+				// Out of random?
+				// TODO: Unsure when this can happen.
+				sendAuthFail(conn, "Try Later")
+				return
+			}
+		}
+		newPass = string(passBytes)
+
+		// Get a cryptographically random salt.
+		saltBytes := make([]byte, 32)
+		for read := 0; read != len(saltBytes); {
+			n, err := rand.Read(saltBytes[read:])
+			read += n
+			if err != nil {
+				// Out of random?
+				// TODO: Unsure when this can happen.
+				sendAuthFail(conn, "Try Later")
+				return
+			}
+		}
+
+		// Generate their salted, hashed password.
+		key, err := scrypt.Key(passBytes, saltBytes, 16384,
+			8, 1, 32)
+		if err != nil {
+			// If you can get here, it's probably
+			// because of a bad password.
+			sendAuthFail(conn, "Invalid Password")
+			return
+		}
+		hash := string(key)
+		salt := string(saltBytes)
+
+		// TODO: Create change creating new user,
+		// new session, attachments as needed.
+		_, _ = hash, salt
+
+		return
 	}
 }
 
@@ -97,6 +232,16 @@ func sendAuthFail(conn *userConn, reason string) {
 	var msg cliproto_down.AuthenticationFailed
 	msg.Reason = new(string)
 	*msg.Reason = reason
-	
+
 	conn.conn.SendProto(2, &msg)
+}
+
+func sendAuthSuccess(conn *userConn, password string) {
+	var msg cliproto_down.AuthenticationSuccess
+	msg.SessionId = new(uint64)
+	msg.Password = new(string)
+	*msg.SessionId = conn.session
+	*msg.Password = password
+
+	conn.conn.SendProto(3, &msg)
 }
