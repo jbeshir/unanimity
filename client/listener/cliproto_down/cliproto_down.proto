@@ -1,4 +1,4 @@
-message AuthenticateFailed {
+message AuthenticationFailed {
 	required string reason = 1;
 }
 

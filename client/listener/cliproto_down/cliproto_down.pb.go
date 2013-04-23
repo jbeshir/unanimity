@@ -13,16 +13,16 @@ var _ = proto.Marshal
 var _ = &json.SyntaxError{}
 var _ = math.Inf
 
-type AuthenticateFailed struct {
+type AuthenticationFailed struct {
 	Reason           *string `protobuf:"bytes,1,req,name=reason" json:"reason,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
-func (m *AuthenticateFailed) Reset()         { *m = AuthenticateFailed{} }
-func (m *AuthenticateFailed) String() string { return proto.CompactTextString(m) }
-func (*AuthenticateFailed) ProtoMessage()    {}
+func (m *AuthenticationFailed) Reset()         { *m = AuthenticationFailed{} }
+func (m *AuthenticationFailed) String() string { return proto.CompactTextString(m) }
+func (*AuthenticationFailed) ProtoMessage()    {}
 
-func (m *AuthenticateFailed) GetReason() string {
+func (m *AuthenticationFailed) GetReason() string {
 	if m != nil && m.Reason != nil {
 		return *m.Reason
 	}
