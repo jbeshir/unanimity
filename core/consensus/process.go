@@ -41,7 +41,8 @@ func process() {
 			continue
 		}
 
-		conn, err := connect.Dial(connect.CONSENSUS_PROTOCOL, node)
+		conn, err := connect.Dial(
+			connect.CONSENSUS_PROTOCOL, node)
 		if err != nil {
 			// Can't reach the other node.
 			continue
@@ -62,6 +63,8 @@ func process() {
 		// Connection retry tick.
 		// We should try to make an outgoing connection to any node
 		// that we do not have at least one connection to.
+		// We need to make these asynchronously, because connections
+		// are slow.
 		case <-reconnectTicker:
 			for _, node := range config.CoreNodes() {
 				if node == config.Id() {
@@ -71,18 +74,7 @@ func process() {
 					continue
 				}
 
-				conn, err := connect.Dial(
-					connect.CONSENSUS_PROTOCOL, node)
-				if err != nil {
-					// Can't reach the other node.
-					continue
-				}
-
-				log.Print("core/consensus: made outgoing " +
-					"connection to ", node)
-				connections[node] =
-					append(connections[node], conn)
-				go handleConn(node, conn)
+				go outgoingConn(node)
 			}
 
 		// New change request, for us to propose as leader.
@@ -197,7 +189,7 @@ func process() {
 			node := recvMsg.node
 			conn := recvMsg.conn
 			msg := recvMsg.msg
-			
+
 			switch *msg.MsgType {
 			case 2:
 				processPrepare(node, conn, msg.Content)
@@ -231,6 +223,20 @@ func process() {
 			}
 		}
 	}
+}
+
+func outgoingConn(node uint16) {
+
+	conn, err := connect.Dial(connect.CONSENSUS_PROTOCOL, node)
+	if err != nil {
+		// Can't reach the other node.
+		return
+	}
+
+	receivedConnCh <- receivedConn{node: node, conn: conn}
+
+	log.Print("core/consensus: made outgoing connection to ", node)
+	handleConn(node, conn)
 }
 
 // Must be called from the processing goroutine.
@@ -322,20 +328,20 @@ func processPromise(node uint16, conn *connect.BaseConn, content []byte) {
 
 	if receivedPromises == nil {
 		// Not attempting to become leader.
-		log.Print("core/consensus: discarded promise, not becoming " +
+		log.Print("core/consensus: discarded promise, not becoming "+
 			"leader, from ", node)
 		return
 	}
 
 	proposal, leader := store.Proposal()
 	if proposal != *msg.Proposal || leader != uint16(*msg.Leader) {
-		log.Print("core/consensus: rejected promise for wrong " +
+		log.Print("core/consensus: rejected promise for wrong "+
 			"proposal number from ", node)
 		return
 	}
 	if receivedPromises[node] != nil {
 		// Protocol violation; shouldn't get duplicate promises.
-		log.Print("core/consensus: PROTOCOL VIOLATION: received " +
+		log.Print("core/consensus: PROTOCOL VIOLATION: received "+
 			"duplicate promise from node ", node)
 		return
 	}
