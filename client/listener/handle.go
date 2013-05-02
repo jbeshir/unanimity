@@ -507,6 +507,7 @@ func handleSend(conn *userConn, content []byte) {
 	userMsg.Recipient = *msg.Recipient
 	userMsg.Tag = *msg.Tag
 	userMsg.Content = *msg.Content
+	userMsg.Ttl = 3
 
 	// Deliver this message.
 	deliver(userMsg)
