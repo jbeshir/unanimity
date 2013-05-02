@@ -99,11 +99,6 @@ func AllAttachedTo(id uint64) []uint64 {
 func Burst(globalCb func(key, value string) (stop bool),
 	entityCb func(entity uint64, key, value string) (stop bool)) {
 
-	// TODO: At present we just burst atomically.
-	// We would need to use data structures which allowed reads concurrent
-	// to one writer to burst asynchronously,
-	// as well as locking on writes to entities.
-	// Such a data structure will be swapped in later.
 	StartTransaction()
 	defer EndTransaction()
 
@@ -127,6 +122,10 @@ func Burst(globalCb func(key, value string) (stop bool),
 				return
 			}
 		}
+
+		// Potentially allow another goroutine to act.
+		EndTransaction()
+		StartTransaction()
 	}
 }
 
@@ -147,7 +146,8 @@ func BurstEntity(entity uint64, key, value string) {
 		panic("tried to set global state while not degraded")
 	}
 
-	// TODO: Handle the ID key, which
+	// Handle the ID key, which is interpreted as an instruction to
+	// create or delete an entity.
 	if key == "id" {
 		if value != "" {
 			store := newStore()
