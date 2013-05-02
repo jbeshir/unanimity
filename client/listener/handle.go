@@ -34,17 +34,30 @@ func handleConn(conn *userConn) {
 			delete(connections, conn)
 		}
 
+		// Remove the connection from our waiting map if present.
+		// This must happen before session removal, as otherwise
+		// auth could complete between the session check and this one.
+		waitingLock.Lock()
+		if conn.waitingAuth != nil {
+			waitingConn := waiting[conn.waitingAuth.requestId]
+			if waitingConn == conn {
+				delete(waiting, conn.waitingAuth.requestId)
+			}
+		}
+		waitingLock.Unlock()
+
 		// Remove the connection from our sessions map if present.
 		// It will not be present if we are degraded,
 		// or have replaced this connection.
+		sessionsLock.Lock()
 		if conn.session != 0 {
-			sessionsLock.Lock()
 			sessionConn := sessions[conn.session]
 			if sessionConn == conn {
 				delete(sessions, conn.session)
 			}
-			sessionsLock.Unlock()
 		}
+		sessionsLock.Unlock()
+
 
 		connectionsLock.Unlock()
 	}()
@@ -108,11 +121,6 @@ func handleAuth(conn *userConn, content []byte) {
 		return
 	}
 
-	if conn.session != 0 || conn.waitingAuth != nil {
-		conn.conn.Close()
-		return
-	}
-
 	// TODO: Validate username and password against constraints.
 
 	// We hold this through quite a lot of logic,
@@ -120,6 +128,15 @@ func handleAuth(conn *userConn, content []byte) {
 	// TODO: Don't block the whole node for so long here.
 	store.StartTransaction()
 	defer store.EndTransaction()
+	sessionsLock.Lock()
+	defer sessionsLock.Unlock()
+	waitingLock.Lock()
+	defer waitingLock.Unlock()
+	
+	if conn.session != 0 || conn.waitingAuth != nil {
+		conn.conn.Close()
+		return
+	}
 
 	userId := store.NameLookup("user", "name username", *msg.Username)
 	if userId != 0 {
@@ -156,8 +173,6 @@ func handleAuth(conn *userConn, content []byte) {
 			}
 
 			// The session does exist.
-			sessionsLock.Lock()
-
 			conn.session = *msg.SessionId
 
 			// If this node is already attached to
@@ -181,8 +196,6 @@ func handleAuth(conn *userConn, content []byte) {
 			// Put us in the sessions map.
 			sessions[conn.session] = conn
 
-			sessionsLock.Unlock()
-
 			// Tell the client they authenticated successfully.
 			sendAuthSuccess(conn, "")
 		} else {
@@ -194,6 +207,7 @@ func handleAuth(conn *userConn, content []byte) {
 			conn.waitingAuth = new(authData)
 			conn.waitingAuth.msg = msg
 			conn.waitingAuth.requestId = req.RequestId
+			waiting[conn.waitingAuth.requestId] = conn
 		}
 	} else {
 		// The user does not already exist.
@@ -242,7 +256,7 @@ func handleAuth(conn *userConn, content []byte) {
 			}
 			hash := string(key)
 			salt := string(saltBytes)
-
+			
 			// Create the new user.
 			req := makeNewUserRequest(newUser, hash, salt, false)
 			go chrequest.Request(req)
@@ -251,6 +265,7 @@ func handleAuth(conn *userConn, content []byte) {
 			conn.waitingAuth = new(authData)
 			conn.waitingAuth.msg = msg
 			conn.waitingAuth.requestId = req.RequestId
+			waiting[conn.waitingAuth.requestId] = conn
 
 			return
 		}
@@ -301,6 +316,8 @@ func handleAuth(conn *userConn, content []byte) {
 		hash := string(key)
 		salt := string(saltBytes)
 
+		waitingLock.Lock()
+
 		// Create the new user.
 		req := makeNewUserRequest(newUser, hash, salt, true)
 		go chrequest.Request(req)
@@ -309,6 +326,9 @@ func handleAuth(conn *userConn, content []byte) {
 		conn.waitingAuth = new(authData)
 		conn.waitingAuth.msg = msg
 		conn.waitingAuth.requestId = req.RequestId
+		waiting[conn.waitingAuth.requestId] = conn
+
+		waitingLock.Unlock()
 
 		return
 	}
@@ -321,16 +341,17 @@ func handleFollowUsername(conn *userConn, content []byte) {
 		conn.conn.Close()
 		return
 	}
+	// Start transaction.
+	store.StartTransaction()
+	defer store.EndTransaction()
+	sessionsLock.Lock()
+	defer sessionsLock.Unlock()
 
 	// Authentication check.
 	if conn.session == 0 {
 		conn.conn.Close()
 		return
 	}
-
-	// Start transaction.
-	store.StartTransaction()
-	defer store.EndTransaction()
 
 	// Lookup this user.
 	followId := store.NameLookup("user", "name username", *msg.Username)
@@ -359,6 +380,12 @@ func handleFollowUser(conn *userConn, content []byte) {
 		return
 	}
 
+	// Start transaction.
+	store.StartTransaction()
+	defer store.EndTransaction()
+	sessionsLock.Lock()
+	defer sessionsLock.Unlock()
+
 	// Authentication check.
 	if conn.session == 0 {
 		conn.conn.Close()
@@ -372,10 +399,6 @@ func handleFollowUser(conn *userConn, content []byte) {
 			return
 		}
 	}
-
-	// Start transaction.
-	store.StartTransaction()
-	defer store.EndTransaction()
 
 	// Check this ID is actually a user entity.
 	otherUser := store.GetEntity(*msg.UserId)
@@ -395,6 +418,9 @@ func handleStopFollowingUser(conn *userConn, content []byte) {
 		conn.conn.Close()
 		return
 	}
+
+	sessionsLock.Lock()
+	defer sessionsLock.Unlock()
 
 	// Authentication check.
 	if conn.session == 0 {
@@ -421,6 +447,9 @@ func handleSend(conn *userConn, content []byte) {
 		conn.conn.Close()
 		return
 	}
+
+	sessionsLock.Lock()
+	defer sessionsLock.Unlock()
 
 	// Authentication check.
 	if conn.session == 0 {

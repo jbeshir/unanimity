@@ -29,23 +29,39 @@ var connectionsLock sync.Mutex
 // Maps sessions to attached client connections.
 var sessions map[uint64]*userConn
 
-// Must be held when accessing the sessions set.
+// Must be held when accessing the sessions map.
 // Must be locked after starting transaction if a transaction is to be entered,
 // to impose an ordering on the two and avoid deadlocks.
 // Must be locked after connectionsLock if both are to be locked,
 // to impose an ordering on the two and avoid deadlocks.
 var sessionsLock sync.Mutex
 
+// Maps request IDs to connections waiting for them to complete.
+var waiting map[uint64]*userConn
+
+// Must be held when accessing the waiting map.
+// Must be locked after starting transaction if a transaction is to be entered,
+// to impose an ordering on the two and avoid deadlocks.
+// Must be locked after connectionsLock if both are to be locked,
+// to impose an ordering on the two and avoid deadlocks.
+var waitingLock sync.Mutex
+
 func init() {
 	connections = make(map[*userConn]bool)
+	sessions = make(map[uint64]*userConn)
+	waiting = make(map[uint64]*userConn)
 }
 
 type userConn struct {
 	conn        *connect.BaseConn
-	session     uint64
-	waitingAuth *authData
 	following   []uint64
 	deliver     chan *relay.UserMessage
+
+	// Must only be accessed holding the sessions lock.
+	session     uint64
+
+	// Must only be accessed holding the waiting lock.
+	waitingAuth *authData
 }
 
 type authData struct {
