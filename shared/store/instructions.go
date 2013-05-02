@@ -123,7 +123,59 @@ func (i *InstructionValue) Choose() {
 	// Apply instructions as far as possible.
 	tryApply()
 
-	// TODO: Discard instructions.
+	// Discard no longer needed instructions, from the start.
+	newStart := start
+	for {
+		relative := newStart - start
+
+		// If we've not applied the instruction yet,
+		// we still need it.
+		if firstUnapplied == newStart {
+			break
+		}
+
+		// If the instruction wasn't chosen long enough ago,
+		// we can't discard it.
+		minDelay := time.Duration(4) * config.CHANGE_TIMEOUT_PERIOD
+		timeChosen := slots[relative][0].TimeChosen()
+		if time.Now().Sub(timeChosen) < minDelay {
+			break
+		}
+
+		// If this is a core node and the majority of core nodes aren't
+		// past this point, we have to keep it.
+		if config.IsCore() {
+			past := 1 // We are past it.
+			coreNodes := config.CoreNodes()
+			for _, node := range coreNodes {
+				if node == config.Id() {
+					continue
+				}
+
+				if NodeFirstUnapplied(node) > newStart {
+					past++
+				}
+			}
+			if past <= len(coreNodes)/2 {
+				break
+			}
+		}
+
+		newStart++
+	}
+
+	// If we can discard, do it by reslicing the slots.
+	// This doesn't result in an immediate free,
+	// but will when we next expand the slots.
+	// This avoids extra performance costs for reallocating them now.
+	if newStart != start {
+		log.Print("Discarding instructions between ", newStart-1,
+			" and ", start)
+
+		slots = slots[newStart-start:]
+		start = newStart
+	}
+
 }
 
 // Returns whether we are currently degraded.
@@ -620,7 +672,7 @@ func tryNameSatisfy(appliedRenames map[string][]uint64, idemChanges []Change,
 			// sequence of name changes.
 			for _, id := range changing {
 				if existing == id {
-					return changing				
+					return changing
 				}
 			}
 
