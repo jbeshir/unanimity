@@ -78,12 +78,30 @@ func handleApplied(slot uint64, idemChanges []store.Change) {
 		if strings.HasPrefix(key, "attach ") {
 
 			// If we were just detached from a session,
-			// drop any connections associated with it.
+			// drop any connections associated with it,
+			// and if it was in our attach timeouts, remove it.
 			if key == ourAttachStr && value == "" {
 
 				sessionId := idemChanges[i].TargetEntity
 				if conn := sessions[sessionId]; conn != nil {
 					conn.conn.Close()
+				}
+
+				if orphanAttachTimeouts[sessionId] != nil {
+					orphanAttachTimeouts[sessionId].Stop()
+					delete(orphanAttachTimeouts, sessionId)
+				}
+			}
+
+			// If we were just attached to a session,
+			// but have no connection associated with that session,
+			// add an attach timeout.
+			// and if it was in our attach timeouts, remove it.
+			if key == ourAttachStr && value != "" {
+
+				sessionId := idemChanges[i].TargetEntity
+				if sessions[sessionId] == nil {
+					startOrphanTimeout(sessionId)
 				}
 			}
 
@@ -115,9 +133,6 @@ func handleApplied(slot uint64, idemChanges []store.Change) {
 			}
 		}
 	}
-
-	// If we're attached to any sessions we lack connections for...
-	// - TODO: Start timer to remove ourselves from them.
 
 	// If we've created a nameless user, start a timer to delete it.
 	for i := range idemChanges {
@@ -192,6 +207,13 @@ func handleDeleting(entityId uint64) {
 		if conn := sessions[entityId]; conn != nil {
 			conn.conn.Close()
 			delete(sessions, entityId)
+		}
+
+		// If we had a timeout waiting to detach ourselves from this
+		// session, cancel it.
+		if orphanAttachTimeouts[entityId] != nil {
+			orphanAttachTimeouts[entityId].Stop()
+			delete(orphanAttachTimeouts, entityId)
 		}
 	}
 }
