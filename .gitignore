@@ -30,6 +30,12 @@ unanimity.conf
 # ctags files
 tags
 
+# Profiling output.
+*.prof
+*.mprof
+
 # Compiled executables.
 unanimity
+bench/msgsink/msgsink
+bench/msgsource/msgsource
 bench/register/register
