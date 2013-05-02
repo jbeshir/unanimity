@@ -1,6 +1,7 @@
 package store
 
 import (
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -100,6 +101,8 @@ func (i *InstructionValue) Accept(id uint16, proposal uint64, leader uint16) {
 // slots have a chosen value.
 func (i *InstructionValue) Choose() {
 
+	log.Print("shared/store: choosing instruction in slot ", i.slot)
+
 	relativeSlot := i.slot - start
 
 	// Drop all other instruction values in the same slot.
@@ -112,12 +115,15 @@ func (i *InstructionValue) Choose() {
 	i.chosenTime = time.Now()
 	i.acceptedBy = nil
 
-	// TODO: Handle the addition of a new chosen instruction.
-
 	// Call instruction chosen callbacks.
 	for _, cb := range chosenCallbacks {
 		cb(i.slot)
 	}
+
+	// Apply instructions as far as possible.
+	tryApply()
+
+	// TODO: Discard instructions.
 }
 
 // Returns whether we are currently degraded.
@@ -258,6 +264,43 @@ func setInstructionStart(newStart uint64) {
 
 	// Set the new start instruction.
 	start = newStart
+}
+
+// Keeps applying instructions until we run out of chosen instructions.
+// Called after an instruction becomes chosen.
+func tryApply() {
+
+	for {
+		relative := int(firstUnapplied - start)
+
+		if relative >= len(slots) {
+			// We've reached the end of our instruction slots.
+			return
+		}
+
+		if len(slots[relative]) != 1 {
+			// There's the wrong number of instructions
+			// in the next slot for there to be a chosen one.
+			return
+		}
+
+		if !slots[relative][0].IsChosen() {
+			// The next instruction is not chosen.
+			return
+		}
+
+		// Apply this instruction.
+		req := slots[relative][0].ChangeRequest()
+		idemChanges := applyChanges(req.Changeset, false)
+
+		// Increment first unapplied.
+		firstUnapplied++
+
+		// Call applied instruction callbacks.
+		for _, cb := range appliedCallbacks {
+			cb(firstUnapplied-1, idemChanges)
+		}
+	}
 }
 
 // Applies the given set of changes.
