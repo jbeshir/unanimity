@@ -1,6 +1,7 @@
 package chrequest
 
 import (
+	"log"
 	"time"
 )
 
@@ -156,6 +157,7 @@ func processForward(forward *chproto.ChangeForward) {
 
 	// If all core node IDs are in the forward's ignore list, discard it.
 	if len(forward.Ignores) == len(config.CoreNodes()) {
+		log.Print("shared/chrequest: dropped msg due to full ignores")
 		return
 	}
 
@@ -169,13 +171,15 @@ func processForward(forward *chproto.ChangeForward) {
 	} else {
 		for _, node := range config.CoreNodes() {
 			if !isIgnored(forward, node) {
-				chosenNode = leader
+				chosenNode = node
 				break
 			}
 		}
 	}
 	if chosenNode == 0 {
 		// Shouldn't happen.
+		log.Print("shared/chrequest: bug, " +
+			"couldn't find candidate leader node")
 		return
 	}
 

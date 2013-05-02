@@ -14,6 +14,10 @@
 package chrequest
 
 import (
+	"log"
+)
+
+import (
 	"github.com/jbeshir/unanimity/shared/chrequest/chproto"
 	"github.com/jbeshir/unanimity/shared/connect"
 	"github.com/jbeshir/unanimity/shared/store"
@@ -80,11 +84,13 @@ func Request(request *store.ChangeRequest) {
 		internalRequest.Changeset[i] = internalChange
 	}
 
+	log.Print("shared/chrequest: making new request ", request.RequestId)
 	newRequestCh <- internalRequest
 }
 
 func incomingConn(node uint16, conn *connect.BaseConn) {
 
+	log.Print("shared/chrequest: received connection from ", node)
 	receivedConnCh <- receivedConn{node: node, conn: conn}
 	handleConn(node, conn)
 }
