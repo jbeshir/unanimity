@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"runtime/pprof"
 	"strconv"
 )
 
@@ -18,16 +19,53 @@ import (
 	"github.com/jbeshir/unanimity/client"
 	"github.com/jbeshir/unanimity/config"
 	"github.com/jbeshir/unanimity/core"
+	"github.com/jbeshir/unanimity/shared/store"
 )
 
+// Closed to halt the program.
+var haltChan chan struct{}
+
+// Profiling settings.
+var memprof *uint
+var cpuprof *uint
+
 func main() {
+	haltChan = make(chan struct{})
+
 	// Define and parse flags.
 	id := flag.Uint("id", 0, "Set the node ID of this unanimity instance.")
+	memprof = flag.Uint("memprof", 0, "Generate a memory profile and " +
+		"halt after the given instruction slot is applied.")
+	cpuprof = flag.Uint("cpuprof", 0, "Generate a CPU profile and halt " +
+		"after the given instruction slot is applied.")
 	flag.Parse()
 
 	// Validate flags.
 	if *id == 0 || *id > 0xFFFF {
 		log.Fatal("Invalid node ID specified.")
+	}
+
+	// If both memprof and cpuprof are set, they need to be the same.
+	if *memprof != 0 && *cpuprof != 0 && *memprof != *cpuprof {
+		log.Fatal("If both memprof and cpuprof are set they must " +
+			"match.")
+	}
+
+	// If either memprof or cpuprof are set, hook up the callback
+	// responsible for terminating the node at the right time.
+	if *memprof != 0 || *cpuprof != 0 {
+		store.AddAppliedCallback(handleProfileTime)
+
+		// If generating a CPU profile, start it now.
+		if *cpuprof != 0 {
+			f, err := os.Create("cpuprofile.prof")
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			pprof.StartCPUProfile(f)
+			defer pprof.StopCPUProfile()
+		}
 	}
 
 	// Load configuration from config file.
@@ -48,7 +86,29 @@ func main() {
 	} else {
 		client.Startup()
 	}
-	select {}
+
+	<-haltChan
+
+	// If we're to generate a memory profile before terminating, do so.
+	if *memprof != 0 {
+		f, err := os.Create("memprofile.mprof")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
+
+		pprof.WriteHeapProfile(f)
+	}
+}
+
+func handleProfileTime(slot uint64, _ []store.Change) {
+	if slot == 0 {
+		return
+	}
+
+	if slot == uint64(*memprof) || slot == uint64(*cpuprof) {
+		close(haltChan)
+	}
 }
 
 func loadConfig() {
