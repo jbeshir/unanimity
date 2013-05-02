@@ -6,6 +6,7 @@ import (
 
 func init() {
 	store.AddDegradedCallback(handleDegraded)
+	store.AddDeletingCallback(handleDeleting)
 	store.AddAppliedCallback(handleApplied)
 }
 
@@ -52,12 +53,53 @@ func handleApplied(slot uint64, idemChanges []store.Change) {
 		handleAuthComplete(waitingConn, idemChanges)
 	}
 
-	// If we just deleted a user...
-	// - TODO: Drop any connections with sessions attached to them.
-	// - TODO: Cancel any follows of that user.
-
-	// If we just deleted a session...
+	// If we were just detached from a session...
 	// - TODO: Drop any connections associated with that session.
+
+	// If we just attached or detached a session to/from a user...
+	// - TODO: Send notifications to following connections.
+
+	// If we're attached to any sessions we lack connections for...
+	// - TODO: Start timer to remove ourselves from them.
+
+	// If we've created a nameless user...
+	// - TODO: Start timer to delete user.
+}
+
+func handleDeleting(entityId uint64) {
+
+	entity := store.GetEntity(entityId)
+	kind := entity.Value("kind")
+
+	switch kind {
+
+	// If it's a user deletion, find any sessions attached to the user,
+	// and drop any connections attached to those.
+	// TODO: Cancel any follows of that user.
+	case "user":
+		sessionIds := entity.AllAttached()
+		if len(sessionIds) > 0 {
+			sessionsLock.Lock()
+			defer sessionsLock.Unlock()
+
+			for _, sessionId := range sessionIds {
+				if conn := sessions[sessionId]; conn != nil {
+					conn.conn.Close()
+				}
+			}
+		}
+
+	// If it's a session, and we have a connection associated to it,
+	// close that connection and remove it from our map.
+	case "session":
+		sessionsLock.Lock()
+		defer sessionsLock.Unlock()
+
+		if conn := sessions[entityId]; conn != nil {
+			conn.conn.Close()
+			delete(sessions, entityId)
+		}
+	}
 }
 
 // Must be called in a transaction, holding session and waiting locks.

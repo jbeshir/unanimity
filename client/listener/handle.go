@@ -54,7 +54,11 @@ func handleConn(conn *userConn) {
 			sessionConn := sessions[conn.session]
 			if sessionConn == conn {
 				delete(sessions, conn.session)
+
+				// TODO: Request change detaching this node ID
+				// from that session.
 			}
+
 		}
 		sessionsLock.Unlock()
 

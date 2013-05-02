@@ -1,6 +1,7 @@
 package store
 
 var chosenCallbacks []func(slot uint64)
+var deletingCallbacks []func(entityId uint64)
 var appliedCallbacks []func(slot uint64, idempotentChanges []Change)
 var proposalCallbacks []func()
 var degradedCallbacks []func()
@@ -17,6 +18,19 @@ var degradedCallbacks []func()
 // May only be called prior to calling Startup(), usually from init().
 func AddChosenCallback(cb func(slot uint64)) {
 	chosenCallbacks = append(chosenCallbacks, cb)
+}
+
+// Adds a callback to be called when an entity is about to be deleting.
+// Called with the entity ID of the entity being deleting, before deletion.
+//
+// The callback must not attempt to start a transaction,
+// or mutate values held by the store package,
+// and may assume no other changes have occurred since the change
+// the callback corresponds to.
+//
+// May only be called prior to calling Startup(), usually from init().
+func AddDeletingCallback(cb func(entityId uint64)) {
+	deletingCallbacks = append(deletingCallbacks, cb)
 }
 
 // Adds a callback to be called when an instruction value is applied.
