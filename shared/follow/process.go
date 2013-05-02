@@ -61,7 +61,7 @@ func process() {
 						targetConns = len(coreNodes)
 					}
 
-					newOutgoing := len(connections) - targetConns
+					newOutgoing := targetConns - len(connections)
 					for newOutgoing > 0 {
 						r := processRand.Intn(len(coreNodes))
 						node := coreNodes[r]
