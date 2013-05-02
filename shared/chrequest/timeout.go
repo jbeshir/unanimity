@@ -37,6 +37,9 @@ var requestTimedOut chan *requestTimeout
 var forwardTimedOut chan *forwardTimeout
 
 func init() {
+	requestTimeouts = make(map[requestKey]*requestTimeout)
+	forwardTimeouts = make(map[requestKey]*forwardTimeout)
+
 	requestTimedOut = make(chan *requestTimeout, 100)
 	forwardTimedOut = make(chan *forwardTimeout, 100)
 }
