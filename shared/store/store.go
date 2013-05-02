@@ -2,6 +2,7 @@ package store
 
 import (
 	"strconv"
+	"strings"
 )
 
 type Store struct {
@@ -25,6 +26,18 @@ func init() {
 func (s *Store) Value(key string) string {
 	v, _ := s.values[key]
 	return v
+}
+
+// Enumerates the attach keys on the given entity.
+func (s *Store) Attached(cb func(key, value string)) {
+
+	for key, value := range s.values {
+		if !strings.HasPrefix(key, "attach ") {
+			continue
+		}
+
+		cb(key, value)
+	}
 }
 
 // Returns the entity store for the entity with the given ID,

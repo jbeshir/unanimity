@@ -12,9 +12,9 @@ import (
 )
 
 import (
-	"github.com/jbeshir/unanimity/config"
 	"github.com/jbeshir/unanimity/client/listener/cliproto_down"
 	"github.com/jbeshir/unanimity/client/listener/cliproto_up"
+	"github.com/jbeshir/unanimity/config"
 	"github.com/jbeshir/unanimity/shared/chrequest"
 	"github.com/jbeshir/unanimity/shared/store"
 )
@@ -43,6 +43,12 @@ func handleConn(conn *userConn) {
 		switch *msg.MsgType {
 		case 2:
 			handleAuth(conn, msg.Content)
+		case 3:
+			handleFollowUsername(conn, msg.Content)
+		case 4:
+			handleFollowUser(conn, msg.Content)
+		case 5:
+			handleStopFollowingUser(conn, msg.Content)
 		default:
 			conn.conn.Close()
 		}
@@ -62,6 +68,8 @@ func handleAuth(conn *userConn, content []byte) {
 		conn.conn.Close()
 		return
 	}
+
+	// TODO: Validate username and password against constraints.
 
 	// We hold this through quite a lot of logic,
 	// including password hashing, which is useful to parallelise.
@@ -255,6 +263,138 @@ func handleAuth(conn *userConn, content []byte) {
 	}
 }
 
+// Can only be called from the handling goroutine for conn.
+func handleFollowUsername(conn *userConn, content []byte) {
+	var msg cliproto_up.FollowUsername
+	if err := proto.Unmarshal(content, &msg); err != nil {
+		conn.conn.Close()
+		return
+	}
+
+	// Authentication check.
+	if conn.session == 0 {
+		conn.conn.Close()
+		return
+	}
+
+	// Start transaction.
+	store.StartTransaction()
+	defer store.EndTransaction()
+
+	// Lookup this user.
+	followId := store.NameLookup("user", "name username", *msg.Username)
+	if followId == 0 {
+		sendFollowUsernameFail(conn, *msg.Username, "No Such User")
+		return
+	}
+
+	// Check we're not already following this user.
+	// If we are, discard the message.
+	for _, existing := range conn.following {
+		if existing == followId {
+			return
+		}
+	}
+
+	// Start following this user.
+	followUser(conn, followId)
+}
+
+// Can only be called from the handling goroutine for conn.
+func handleFollowUser(conn *userConn, content []byte) {
+	var msg cliproto_up.FollowUser
+	if err := proto.Unmarshal(content, &msg); err != nil {
+		conn.conn.Close()
+		return
+	}
+
+	// Authentication check.
+	if conn.session == 0 {
+		conn.conn.Close()
+		return
+	}
+
+	// Check we're not already following this user.
+	// If we are, discard the message.
+	for _, existing := range conn.following {
+		if existing == *msg.UserId {
+			return
+		}
+	}
+
+	// Start transaction.
+	store.StartTransaction()
+	defer store.EndTransaction()
+
+	// Check this ID is actually a user entity.
+	otherUser := store.GetEntity(*msg.UserId)
+	if otherUser == nil || otherUser.Value("kind") != "user" {
+		sendFollowUserIdFail(conn, *msg.UserId, "No Such User")
+		return
+	}
+
+	// Start following this user.
+	followUser(conn, *msg.UserId)
+}
+
+// Can only be called from the handling goroutine for conn.
+func handleStopFollowingUser(conn *userConn, content []byte) {
+	var msg cliproto_up.StopFollowingUser
+	if err := proto.Unmarshal(content, &msg); err != nil {
+		conn.conn.Close()
+		return
+	}
+
+	// Authentication check.
+	if conn.session == 0 {
+		conn.conn.Close()
+		return
+	}
+
+	// If the ID exists in our following list, remove it.
+	for i, existing := range conn.following {
+		if existing == *msg.UserId {
+			conn.following = append(conn.following[:i],
+				conn.following[i+1:]...)
+		}
+	}
+
+	// Send "stopped following" message.
+	sendStoppedFollowing(conn, *msg.UserId, "By Request")
+}
+
+// Can only be called from the handling goroutine for conn,
+// inside a transaction.
+func followUser(conn *userConn, followId uint64) {
+	conn.following = append(conn.following, followId)
+
+	user := store.GetEntity(followId)
+
+	// Send the user's username.
+	var dataMsg cliproto_down.UserData
+	dataMsg.UserId = new(uint64)
+	dataMsg.Key = new(string)
+	dataMsg.Value = new(string)
+	dataMsg.FirstUnapplied = new(uint64)
+	*dataMsg.UserId = followId
+	*dataMsg.Key = "name username"
+	*dataMsg.Value = user.Value(*dataMsg.Key)
+	*dataMsg.FirstUnapplied = store.InstructionFirstUnapplied()
+	conn.conn.SendProto(6, &dataMsg)
+
+	// Send information on all the user's sessions.
+	user.Attached(func(key, value string) {
+		*dataMsg.Key = key
+		*dataMsg.Value = value
+		conn.conn.SendProto(6, &dataMsg)
+	})
+
+	// Send a done message to indicate that we are finished.
+	var doneMsg cliproto_down.UserDataDone
+	doneMsg.UserId = dataMsg.UserId
+	conn.conn.SendProto(7, &doneMsg)
+}
+
 func sendAuthFail(conn *userConn, reason string) {
 	var msg cliproto_down.AuthenticationFailed
 	msg.Reason = new(string)
@@ -273,11 +413,48 @@ func sendAuthSuccess(conn *userConn, password string) {
 	conn.conn.SendProto(3, &msg)
 }
 
+// Must be called inside transaction.
+func sendFollowUsernameFail(conn *userConn, username, reason string) {
+	var msg cliproto_down.FollowUsernameFailed
+	msg.Username = new(string)
+	msg.Reason = new(string)
+	msg.FirstUnapplied = new(uint64)
+	*msg.Username = username
+	*msg.Reason = reason
+	*msg.FirstUnapplied = store.InstructionFirstUnapplied()
+
+	conn.conn.SendProto(4, &msg)
+}
+
+// Must be called inside transaction.
+func sendFollowUserIdFail(conn *userConn, userId uint64, reason string) {
+	var msg cliproto_down.FollowUserIdFailed
+	msg.UserId = new(uint64)
+	msg.Reason = new(string)
+	msg.FirstUnapplied = new(uint64)
+	*msg.UserId = userId
+	*msg.Reason = reason
+	*msg.FirstUnapplied = store.InstructionFirstUnapplied()
+
+	conn.conn.SendProto(5, &msg)
+}
+
+// Must be called inside transaction.
+func sendStoppedFollowing(conn *userConn, userId uint64, reason string) {
+	var msg cliproto_down.StoppedFollowing
+	msg.UserId = new(uint64)
+	msg.Reason = new(string)
+	*msg.UserId = userId
+	*msg.Reason = reason
+
+	conn.conn.SendProto(9, &msg)
+}
+
 // Create change request creating new session entity,
 // attached to user entity, this node ID attached to it.
 // And the session then set as transient.
 func makeNewUserRequest(username, pass, salt string,
-		transient bool) *store.ChangeRequest {
+	transient bool) *store.ChangeRequest {
 	count := 10
 	if transient {
 		// Add an extra change for setting the user as transient.

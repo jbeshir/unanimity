@@ -53,68 +53,68 @@ func (m *AuthenticationSuccess) GetPassword() string {
 	return ""
 }
 
-type FollowFailed struct {
+type FollowUsernameFailed struct {
 	FirstUnapplied   *uint64 `protobuf:"varint,1,req,name=firstUnapplied" json:"firstUnapplied,omitempty"`
 	Username         *string `protobuf:"bytes,2,req,name=username" json:"username,omitempty"`
 	Reason           *string `protobuf:"bytes,3,req,name=reason" json:"reason,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
-func (m *FollowFailed) Reset()         { *m = FollowFailed{} }
-func (m *FollowFailed) String() string { return proto.CompactTextString(m) }
-func (*FollowFailed) ProtoMessage()    {}
+func (m *FollowUsernameFailed) Reset()         { *m = FollowUsernameFailed{} }
+func (m *FollowUsernameFailed) String() string { return proto.CompactTextString(m) }
+func (*FollowUsernameFailed) ProtoMessage()    {}
 
-func (m *FollowFailed) GetFirstUnapplied() uint64 {
+func (m *FollowUsernameFailed) GetFirstUnapplied() uint64 {
 	if m != nil && m.FirstUnapplied != nil {
 		return *m.FirstUnapplied
 	}
 	return 0
 }
 
-func (m *FollowFailed) GetUsername() string {
+func (m *FollowUsernameFailed) GetUsername() string {
 	if m != nil && m.Username != nil {
 		return *m.Username
 	}
 	return ""
 }
 
-func (m *FollowFailed) GetReason() string {
+func (m *FollowUsernameFailed) GetReason() string {
 	if m != nil && m.Reason != nil {
 		return *m.Reason
 	}
 	return ""
 }
 
-type Following struct {
+type FollowUserIdFailed struct {
 	FirstUnapplied   *uint64 `protobuf:"varint,1,req,name=firstUnapplied" json:"firstUnapplied,omitempty"`
-	Username         *string `protobuf:"bytes,2,req,name=username" json:"username,omitempty"`
-	UserId           *uint64 `protobuf:"varint,3,req,name=userId" json:"userId,omitempty"`
+	UserId           *uint64 `protobuf:"varint,2,req,name=userId" json:"userId,omitempty"`
+	Reason           *string `protobuf:"bytes,3,req,name=reason" json:"reason,omitempty"`
 	XXX_unrecognized []byte  `json:"-"`
 }
 
-func (m *Following) Reset()         { *m = Following{} }
-func (m *Following) String() string { return proto.CompactTextString(m) }
-func (*Following) ProtoMessage()    {}
+func (m *FollowUserIdFailed) Reset()         { *m = FollowUserIdFailed{} }
+func (m *FollowUserIdFailed) String() string { return proto.CompactTextString(m) }
+func (*FollowUserIdFailed) ProtoMessage()    {}
 
-func (m *Following) GetFirstUnapplied() uint64 {
+func (m *FollowUserIdFailed) GetFirstUnapplied() uint64 {
 	if m != nil && m.FirstUnapplied != nil {
 		return *m.FirstUnapplied
 	}
 	return 0
 }
 
-func (m *Following) GetUsername() string {
-	if m != nil && m.Username != nil {
-		return *m.Username
-	}
-	return ""
-}
-
-func (m *Following) GetUserId() uint64 {
+func (m *FollowUserIdFailed) GetUserId() uint64 {
 	if m != nil && m.UserId != nil {
 		return *m.UserId
 	}
 	return 0
+}
+
+func (m *FollowUserIdFailed) GetReason() string {
+	if m != nil && m.Reason != nil {
+		return *m.Reason
+	}
+	return ""
 }
 
 type UserData struct {

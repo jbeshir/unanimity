@@ -7,16 +7,16 @@ message AuthenticationSuccess {
 	required string password = 2;
 }
 
-message FollowFailed {
+message FollowUsernameFailed {
 	required uint64 firstUnapplied = 1;
 	required string username = 2;
 	required string reason = 3;
 }
 
-message Following {
+message FollowUserIdFailed {
 	required uint64 firstUnapplied = 1;
-	required string username = 2;
-	required uint64 userId = 3;
+	required uint64 userId = 2;
+	required string reason = 3;
 }
 
 message UserData {

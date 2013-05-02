@@ -5,7 +5,7 @@ package store
 // Returns 0 if no such entity exists.
 // May only be called in a transaction.
 func NameLookup(entityType, nameKey, nameValue string) uint64 {
-	
+
 	// While this works for non-"name"-prefixed keys right now,
 	// that will likely cease to be the case when indexes are implemented.
 
