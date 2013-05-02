@@ -10,6 +10,10 @@
 package consensus
 
 import (
+	"log"
+)
+
+import (
 	"github.com/jbeshir/unanimity/shared/connect"
 )
 
@@ -41,5 +45,7 @@ func Startup() {
 func incomingConn(node uint16, conn *connect.BaseConn) {
 
 	receivedConnCh <- receivedConn{node: node, conn: conn}
+
+	log.Print("core/consensus: received connection from ", node)
 	handleConn(node, conn)
 }

@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"log"
 	"time"
 )
 
@@ -46,6 +47,7 @@ func process() {
 			continue
 		}
 
+		log.Print("core/consensus: made outgoing connection to ", node)
 		connections[node] = append(connections[node], conn)
 	}
 
@@ -75,6 +77,8 @@ func process() {
 					continue
 				}
 
+				log.Print("core/consensus: made outgoing " +
+					"connection to ", node)
 				connections[node] =
 					append(connections[node], conn)
 			}
@@ -318,6 +322,8 @@ func processPromise(node uint16, conn *connect.BaseConn, content []byte) {
 
 	proposal, leader := store.Proposal()
 	if proposal != *msg.Proposal || leader != uint16(*msg.Leader) {
+		log.Print("core/consensus: rejected promise for wrong " +
+			"proposal number from ", node)
 		return
 	}
 	if receivedPromises[node] != nil {
@@ -453,6 +459,8 @@ func addPromise(node uint16, msg *coproto.Promise) {
 	// If we have promises from a majority of core nodes,
 	// become leader.
 	if len(receivedPromises) > len(config.CoreNodes())/2 {
+
+		log.Print("core/consensus: became leader")
 
 		stopLeaderTimeout()
 		amLeader = true
