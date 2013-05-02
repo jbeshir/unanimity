@@ -1,6 +1,12 @@
 package listener
 
 import (
+	"strconv"
+	"strings"
+)
+
+import (
+	"github.com/jbeshir/unanimity/config"
 	"github.com/jbeshir/unanimity/shared/store"
 )
 
@@ -31,6 +37,10 @@ func handleDegraded() {
 
 		connectionsLock.Unlock()
 
+	} else {
+		// If we've become undegraded...
+		// - TODO: Check for attached sessions without connections.
+		// - TODO: Check for nameless users.
 	}
 }
 
@@ -53,11 +63,52 @@ func handleApplied(slot uint64, idemChanges []store.Change) {
 		handleAuthComplete(waitingConn, idemChanges)
 	}
 
-	// If we were just detached from a session...
-	// - TODO: Drop any connections associated with that session.
+	ourAttachStr := "attach " + strconv.FormatUint(uint64(config.Id()), 10)
+	for i := range idemChanges {
 
-	// If we just attached or detached a session to/from a user...
-	// - TODO: Send notifications to following connections.
+		key := idemChanges[i].Key
+		value := idemChanges[i].Value
+
+		if strings.HasPrefix(key, "attach ") {
+
+			// If we were just detached from a session,
+			// drop any connections associated with it.
+			if key == ourAttachStr && value == "" {
+
+				sessionId := idemChanges[i].TargetEntity
+				if conn := sessions[sessionId]; conn != nil {
+					conn.conn.Close()
+				}
+			}
+
+			// Handle a session attaching/detaching from a user.
+			entityId := idemChanges[i].TargetEntity
+			entity := store.GetEntity(entityId)
+			if entity != nil && entity.Value("kind") == "user" {
+
+				// Tell following connections when a session
+				// attaches or detaches from a followed user.
+				// TODO: Expensive loop,
+				// should maintain index to avoid this.
+				for conn, _ := range connections {
+					following := false
+					for _, fw := range conn.following {
+						if fw == entityId {
+							following = true
+							break
+						}
+					}
+
+					if !following {
+						continue
+					}
+
+					sendUserChange(conn, entityId,
+						key, value)
+				}
+			}
+		}
+	}
 
 	// If we're attached to any sessions we lack connections for...
 	// - TODO: Start timer to remove ourselves from them.

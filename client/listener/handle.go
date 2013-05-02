@@ -550,6 +550,20 @@ func sendFollowUserIdFail(conn *userConn, userId uint64, reason string) {
 }
 
 // Must be called inside transaction.
+func sendUserChange(conn *userConn, entityId uint64, key, value string) {
+	var msg cliproto_down.UserDataChange
+	msg.UserId = new(uint64)
+	msg.Key = new(string)
+	msg.Value = new(string)
+	msg.FirstUnapplied = new(uint64)
+	*msg.UserId = entityId
+	*msg.Key = key
+	*msg.Value = value
+	*msg.FirstUnapplied = store.InstructionFirstUnapplied()
+	conn.conn.SendProto(8, &msg)
+}
+
+// Must be called inside transaction.
 func sendStoppedFollowing(conn *userConn, userId uint64, reason string) {
 	var msg cliproto_down.StoppedFollowing
 	msg.UserId = new(uint64)

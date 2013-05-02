@@ -73,6 +73,10 @@ type authData struct {
 }
 
 func Startup() {
+	// If undegraded...
+	// - TODO: Check for attached sessions we lack connections for.
+	// - TODO: Check for nameless users.
+
 	// Start accepting client protocol connections.
 	go connect.Listen(connect.CLIENT_PROTOCOL, incomingConn)
 }
