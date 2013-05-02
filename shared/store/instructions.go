@@ -217,7 +217,10 @@ func EndBurst(start uint64, chrequests []ChangeRequest) {
 		panic("tried to set start instruction number while !degraded")
 	}
 
-	// TODO: Apply idempotent changesets.
+	// Apply idempotent changesets.
+	for i := range chrequests {
+		applyChanges(chrequests[i].Changeset, true)
+	}
 
 	setInstructionStart(start)
 	firstUnapplied = start
@@ -253,6 +256,96 @@ func setInstructionStart(newStart uint64) {
 
 	// Set the new start instruction.
 	start = newStart
+}
+
+// Applies the given set of changes.
+// Returns an idempotent version of the changeset,
+// whether or not it was given one or not.
+func applyChanges(changes []Change, idempotent bool) []Change {
+
+	// Set our new idempotent version of the changeset to the same slice
+	// if we are to assume we were given an idempotent set,
+	// and to a copy of it otherwise.
+	var idemChanges []Change
+	if idempotent {
+		idemChanges = changes
+	} else {
+		idemChanges = append([]Change(nil), changes...)
+	}
+
+	// This type of loop lets us inject changes into the changeset.
+	for i := 0; i < len(idemChanges); i++ {
+
+		target := idemChanges[i].TargetEntity
+		key := idemChanges[i].Key
+		value := idemChanges[i].Value
+
+		// If we're setting "id", it's creating an entity.
+		if key == "id" && value != "" {
+
+			// If this was not an idempotent changeset,
+			// do needed special operation work.
+			if !idempotent {
+				// TODO: Implement special operations.
+			}
+
+			// Create the entity, deleting any previous if needed.
+			store := newStore()
+			entityMap[target] = &store
+			entityMap[target].values["id"] = value
+
+			continue
+		}
+
+		// If we're clearing "id", it's deleting an entity.
+		if key == "id" && value == "" {
+
+			// If this was not an idempotent changeset,
+			// do needed special operation work.
+			if !idempotent {
+				// TODO: Implement special operations.
+			}
+
+			// Delete the entity if it exists.
+			// Call deleting callbacks first.
+			if entityMap[target] != nil {
+				for _, cb := range deletingCallbacks {
+					cb(target)
+				}
+
+				delete(entityMap, target)
+			}
+
+			continue
+		}
+
+		// Otherwise, if the target doesn't exist, discard the change.
+		// Should not happen in an already idempotent changeset.
+		entity := entityMap[target]
+		if entity == nil {
+			idemChanges = append(idemChanges[:i],
+				idemChanges[i+1:]...)
+
+			// Don't increment our position.
+			i--
+
+			continue
+		}
+
+		// If this changeset is already in an idempotent form,
+		// everything else is just setting/unsetting keys.
+		if !idempotent {
+			// TODO: Implement special operations.
+		}
+
+		if value != "" {
+			entity.values[key] = value
+		} else {
+			delete(entity.values, key)
+		}
+	}
+
+	return idemChanges
 }
 
 // Returns whether the Paxos round represented by proposal1 and leader1 is
