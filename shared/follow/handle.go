@@ -426,7 +426,7 @@ func handleLeader(f *followConn, content []byte) {
 	proposal, leader := store.Proposal()
 	msgProposal, msgLeader := *msg.Proposal, uint16(*msg.Leader)
 	if store.CompareProposals(msgProposal, msgLeader, proposal, leader) {
-		store.SetProposal(proposal, leader)
+		store.SetProposal(msgProposal, msgLeader)
 	}
 }
 
