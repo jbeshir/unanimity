@@ -38,9 +38,15 @@ func handleDegraded() {
 		connectionsLock.Unlock()
 
 	} else {
+		sessionsLock.Lock()
+		defer sessionsLock.Unlock()
+
 		// If we've become undegraded...
-		// - TODO: Check for attached sessions without connections.
-		// - TODO: Check for nameless users.
+		// Check for attached sessions without connections.
+		checkOrphanAttaches()
+
+		// Check for nameless users.
+		checkNameless()
 	}
 }
 
@@ -113,8 +119,20 @@ func handleApplied(slot uint64, idemChanges []store.Change) {
 	// If we're attached to any sessions we lack connections for...
 	// - TODO: Start timer to remove ourselves from them.
 
-	// If we've created a nameless user...
-	// - TODO: Start timer to delete user.
+	// If we've created a nameless user, start a timer to delete it.
+	for i := range idemChanges {
+		if idemChanges[i].Key != "kind" ||
+			idemChanges[i].Value != "user" {
+
+			continue
+		}
+
+		newUserId := idemChanges[i].TargetEntity
+		newUser := store.GetEntity(newUserId)
+		if newUser != nil && newUser.Value("name username") == "" {
+			startNamelessTimeout(newUserId)
+		}
+	}
 }
 
 func handleDeleting(entityId uint64) {
@@ -126,7 +144,8 @@ func handleDeleting(entityId uint64) {
 
 	// If it's a user deletion, find any sessions attached to the user,
 	// and drop any connections attached to those.
-	// Also cancel any follows of that user.
+	// Cancel any follows of that user.
+	// Additionally, remove any corresponding nameless user delete timeout.
 	case "user":
 		connectionsLock.Lock()
 		defer connectionsLock.Unlock()
@@ -157,6 +176,11 @@ func handleDeleting(entityId uint64) {
 					conn.conn.Close()
 				}
 			}
+		}
+
+		if namelessRemoveTimeouts[entityId] != nil {
+			namelessRemoveTimeouts[entityId].Stop()
+			delete(namelessRemoveTimeouts, entityId)
 		}
 
 	// If it's a session, and we have a connection associated to it,
@@ -210,6 +234,8 @@ func handleAuthComplete(conn *userConn, idemChanges []store.Change) {
 	user := store.GetEntity(attachedTo[0])
 	if user.Value("name username") == "" {
 		sendAuthFail(conn, "Username Already In Use")
+
+		// TODO: Should request deletion of user, leaning on timeout.
 		return
 	}
 

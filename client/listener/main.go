@@ -73,9 +73,17 @@ type authData struct {
 }
 
 func Startup() {
-	// If undegraded...
-	// - TODO: Check for attached sessions we lack connections for.
-	// - TODO: Check for nameless users.
+	store.StartTransaction()
+	defer store.EndTransaction()
+	sessionsLock.Lock()
+	defer sessionsLock.Unlock()
+
+	// If undegraded, check for attached users with no session,
+	// or nameless users in the store.
+	if !store.Degraded() {
+		checkOrphanAttaches()
+		checkNameless()
+	}
 
 	// Start accepting client protocol connections.
 	go connect.Listen(connect.CLIENT_PROTOCOL, incomingConn)
