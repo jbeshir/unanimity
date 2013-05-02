@@ -23,11 +23,17 @@ func SetProposal(newProposal uint64, newLeader uint16) {
 		lastLeader = time.Now()
 	}
 
-	intProposal = newProposal
-	intLeader = newLeader
+	if newProposal != intProposal || newLeader != intLeader {
+		intProposal = newProposal
+		intLeader = newLeader
 
-	log.Print("shared/store: new proposal and leader ",
-		intProposal, " ", intLeader)
+		log.Print("shared/store: new proposal and leader ",
+			intProposal, " ", intLeader)
+
+		for _, cb := range proposalCallbacks {
+			cb()
+		}
+	}
 }
 
 // If the leader ID matches our ID,
