@@ -85,7 +85,6 @@ func cancelRequestTimeout(requestNode uint16, requestId uint64) {
 	key.requestId = requestId
 
 	if v, exists := requestTimeouts[key]; exists {
-		log.Print("shared/chrequest: successful request ", requestId)
 		v.canceled = true
 		v.timer.Stop()
 		delete(requestTimeouts, key)
@@ -142,11 +141,17 @@ func handleChosenRequests(slot uint64) {
 
 	relativeSlot := int(slot - store.InstructionStart())
 	instruction := store.InstructionSlots()[relativeSlot][0]
-	chrequest := instruction.ChangeRequest()
+	req := instruction.ChangeRequest()
 
 	requestTimeoutLock.Lock()
 
-	cancelRequestTimeout(chrequest.RequestNode, chrequest.RequestId)
+	_, exists := getRequestTimeout(req.RequestNode, req.RequestId)
+	if exists {
+		log.Print("shared/chrequest: successful request ",
+			req.RequestId)
+
+		cancelRequestTimeout(req.RequestNode, req.RequestId)
+	}
 
 	requestTimeoutLock.Unlock()
 }

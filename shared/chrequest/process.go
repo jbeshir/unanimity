@@ -27,6 +27,9 @@ func process() {
 				break
 			}
 
+			log.Print("shared/chrequest: request timeout: ",
+				*timeout.request.RequestId)
+
 			// Remove this request timeout.
 			cancelRequestTimeout(
 				uint16(*timeout.request.RequestNode),
