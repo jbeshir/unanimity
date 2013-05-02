@@ -20,6 +20,8 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
+	"time"
 )
 
 import (
@@ -81,6 +83,9 @@ func main() {
 }
 
 var count uint64
+var delay time.Duration
+
+const printPeriod = 10000
 
 func handleMsg(content []byte) {
 	var msg cliproto_down.Received
@@ -88,9 +93,28 @@ func handleMsg(content []byte) {
 		log.Fatal(err)
 	}
 
+	if *msg.Tag != "benchmark" {
+		return
+	}
+
+	// Provide a count of messages.
 	count++
-	if count % 10000 == 0 {
+
+	// Provide latency measuring.
+	// Note that for this, msgsource and msgsink need
+	// *very* closely matched system clocks, with the difference
+	// small compared to expected latency.
+	parts := strings.Split(*msg.Content, " ")
+	timeUnixNanos, _ := strconv.ParseInt(parts[0], 10, 64)
+	delay += time.Now().Sub(time.Unix(0, timeUnixNanos))
+
+	if count % printPeriod == 0 {
+		msgIndex, _ := strconv.ParseUint(parts[1], 10, 64)
+		loss := float64(msgIndex) / float64(count) - 1
+
 		log.Print("count: ", count)
+		log.Print("average latency: ", delay / time.Duration(count))
+		log.Print("approx msg loss: ", loss * 100, "%")
 	}
 }
 
