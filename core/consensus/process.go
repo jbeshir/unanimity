@@ -382,31 +382,7 @@ func processAccept(node uint16, conn *connect.BaseConn, content []byte) {
 		store.SetProposal(msgProposal, msgLeader)
 	}
 
-	// Send an accepted message to all other core nodes reachable.
-	var accepted coproto.Accepted
-	accepted.Proposal = msg.Proposal
-	accepted.Leader = new(uint32)
-	*accepted.Leader = uint32(msgLeader)
-	accepted.Instruction = msg.Instruction
-
-	// We must do this before sending accepted messages.
-	if !addAccepted(config.Id(), &accepted) {
-		// Required too large an instruction slots slice.
-		// We have NOT accepted this accept message,
-		// and must NOT send accepted messages.
-		return
-	}
-
-	for _, node := range config.CoreNodes() {
-		if node == config.Id() {
-			continue
-		}
-
-		if len(connections[node]) > 0 {
-			connections[node][0].SendProto(5, &accepted)
-		}
-	}
-
+	addAccept(node, &msg)
 }
 
 // Must be called from the processing goroutine.
@@ -591,6 +567,38 @@ func addPromise(node uint16, msg *coproto.Promise) {
 }
 
 // Must be called from the processing goroutine, inside a transaction.
+// Handle an accept message that we've decided to respond to.
+// Called directly when we send accepted messages to other nodes.
+func addAccept(node uint16, msg *coproto.Accept) {
+
+	// Send an accepted message to all other core nodes reachable.
+	var accepted coproto.Accepted
+	accepted.Proposal = msg.Proposal
+	accepted.Leader = new(uint32)
+	*accepted.Leader = uint32(node)
+	accepted.Instruction = msg.Instruction
+
+	// We must do this before sending accepted messages.
+	// We behave as if we received one from ourselves.
+	if !addAccepted(config.Id(), &accepted) {
+		// Required too large an instruction slots slice.
+		// We have NOT accepted this accept message,
+		// and must NOT send accepted messages.
+		return
+	}
+
+	for _, node := range config.CoreNodes() {
+		if node == config.Id() {
+			continue
+		}
+
+		if len(connections[node]) > 0 {
+			connections[node][0].SendProto(5, &accepted)
+		}
+	}
+}
+
+// Must be called from the processing goroutine, inside a transaction.
 // Returns false if it discarded the accepted message because of it being
 // too far in our future. Any other reason for discarding the message,
 // as well as the accept succeeding, will return true.
@@ -674,14 +682,8 @@ func sendProposal(inst *coproto.Instruction) {
 		}
 	}
 
-	// Behave as if we got an accepted
-	// message from ourselves.
-	var accepted coproto.Accepted
-	accepted.Proposal = accept.Proposal
-	accepted.Leader = new(uint32)
-	*accepted.Leader = uint32(leader)
-	accepted.Instruction = inst
-	addAccepted(config.Id(), &accepted)
+	// Behave as if we received our own accept message.
+	addAccept(config.Id(), &accept)
 }
 
 func appendInst(list *[]*coproto.Instruction, slot uint64,
