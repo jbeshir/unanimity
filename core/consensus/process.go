@@ -49,6 +49,7 @@ func process() {
 
 		log.Print("core/consensus: made outgoing connection to ", node)
 		connections[node] = append(connections[node], conn)
+		go handleConn(node, conn)
 	}
 
 	// Retry connections once per config.CHANGE_TIMEOUT_PERIOD.
@@ -81,6 +82,7 @@ func process() {
 					"connection to ", node)
 				connections[node] =
 					append(connections[node], conn)
+				go handleConn(node, conn)
 			}
 
 		// New change request, for us to propose as leader.
@@ -195,6 +197,7 @@ func process() {
 			node := recvMsg.node
 			conn := recvMsg.conn
 			msg := recvMsg.msg
+			
 			switch *msg.MsgType {
 			case 2:
 				processPrepare(node, conn, msg.Content)
@@ -244,6 +247,8 @@ func processPrepare(node uint16, conn *connect.BaseConn, content []byte) {
 	newProposal, newLeader := *msg.Proposal, node
 	proposal, leader := store.Proposal()
 	if store.CompareProposals(newProposal, newLeader, proposal, leader) {
+
+		log.Print("core/consensus: sending promise to ", newLeader)
 
 		// Create a promise message to send back.
 		var promise coproto.Promise
@@ -317,6 +322,8 @@ func processPromise(node uint16, conn *connect.BaseConn, content []byte) {
 
 	if receivedPromises == nil {
 		// Not attempting to become leader.
+		log.Print("core/consensus: discarded promise, not becoming " +
+			"leader, from ", node)
 		return
 	}
 
@@ -328,9 +335,12 @@ func processPromise(node uint16, conn *connect.BaseConn, content []byte) {
 	}
 	if receivedPromises[node] != nil {
 		// Protocol violation; shouldn't get duplicate promises.
+		log.Print("core/consensus: PROTOCOL VIOLATION: received " +
+			"duplicate promise from node ", node)
 		return
 	}
 
+	log.Print("core/consensus: received promise from node ", node)
 	addPromise(node, &msg)
 }
 
