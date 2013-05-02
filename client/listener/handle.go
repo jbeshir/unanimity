@@ -55,8 +55,19 @@ func handleConn(conn *userConn) {
 			if sessionConn == conn {
 				delete(sessions, conn.session)
 
-				// TODO: Request change detaching this node ID
+				// Send a change detaching this node
 				// from that session.
+				idStr := strconv.FormatUint(uint64(config.Id()),
+					10)
+				ourAttachStr := "attach " +idStr
+
+				chset := make([]store.Change, 1)
+				chset[0].TargetEntity = conn.session
+				chset[0].Key = ourAttachStr
+				chset[0].Value = ""
+
+				req := makeRequest(chset)
+				go chrequest.Request(req)
 			}
 
 		}
