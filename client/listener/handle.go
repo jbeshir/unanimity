@@ -80,7 +80,7 @@ func handleConn(conn *userConn) {
 		select {
 		case msg, ok := <-conn.conn.Received:
 			if !ok {
-				break
+				return
 			}
 
 			switch *msg.MsgType {
