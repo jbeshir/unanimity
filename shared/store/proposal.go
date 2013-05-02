@@ -1,6 +1,7 @@
 package store
 
 import (
+	"log"
 	"time"
 )
 
@@ -8,22 +9,25 @@ import (
 	"github.com/jbeshir/unanimity/config"
 )
 
-var proposal uint64
-var leader uint16
+var intProposal uint64
+var intLeader uint16
 
 var lastLeader time.Time
 
 func Proposal() (proposal uint64, leader uint16) {
-	return proposal, leader
+	return intProposal, intLeader
 }
 
 func SetProposal(newProposal uint64, newLeader uint16) {
-	if leader == config.Id() && newLeader != leader {
+	if intLeader == config.Id() && newLeader != intLeader {
 		lastLeader = time.Now()
 	}
 
-	proposal = newProposal
-	leader = newLeader
+	intProposal = newProposal
+	intLeader = newLeader
+
+	log.Print("shared/store: new proposal and leader ",
+		intProposal, " ", intLeader)
 }
 
 // If the leader ID matches our ID,
@@ -31,7 +35,7 @@ func SetProposal(newProposal uint64, newLeader uint16) {
 // Call when, whether or not we've a new leader,
 // we consider ourselves to have stopped being the leader.
 func StopLeading() {
-	if leader == config.Id() {
+	if intLeader == config.Id() {
 		lastLeader = time.Now()
 	}
 }
