@@ -1,6 +1,7 @@
 package follow
 
 import (
+	"log"
 	"math/rand"
 	"sync"
 	"time"
@@ -195,11 +196,12 @@ func tryOutgoing(node uint16) {
 		return
 	}
 
+	log.Print("shared/follow: made new outgoing connection to ", node)
+
 	// Send the new outgoing connection to the processing goroutine.
 	followConn := new(followConn)
 	followConn.node = node
 	followConn.conn = conn
 	followConn.outgoing = true
 	receivedConnCh <- followConn
-
 }

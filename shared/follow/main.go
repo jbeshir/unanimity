@@ -11,6 +11,10 @@
 package follow
 
 import (
+	"log"
+)
+
+import (
 	"github.com/jbeshir/unanimity/shared/connect"
 )
 
@@ -35,5 +39,6 @@ func incomingConn(node uint16, conn *connect.BaseConn) {
 	followConn.node = node
 	followConn.conn = conn
 
+	log.Print("shared/follow: received connection from ", node)
 	receivedConnCh <- followConn
 }

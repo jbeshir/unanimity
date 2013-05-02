@@ -1,6 +1,10 @@
 package chrequest
 
 import (
+	"log"
+)
+
+import (
 	"github.com/jbeshir/unanimity/shared/chrequest/chproto"
 	"github.com/jbeshir/unanimity/shared/connect"
 )
@@ -22,6 +26,9 @@ func sendForward(node uint16, forward *chproto.ChangeForward) {
 			// Message is dropped.
 			return
 		}
+
+		log.Print("shared/chrequest: made new outgoing conn to node ",
+			node)
 
 		connections[node] = append(connections[node], conn)
 		go handleConn(node, conn)

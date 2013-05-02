@@ -1,6 +1,7 @@
 package chrequest
 
 import (
+	"log"
 	"sync"
 	"time"
 )
@@ -84,6 +85,7 @@ func cancelRequestTimeout(requestNode uint16, requestId uint64) {
 	key.requestId = requestId
 
 	if v, exists := requestTimeouts[key]; exists {
+		log.Print("shared/chrequest: successful request ", requestId)
 		v.canceled = true
 		v.timer.Stop()
 		delete(requestTimeouts, key)
