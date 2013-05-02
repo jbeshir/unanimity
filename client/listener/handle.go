@@ -14,6 +14,7 @@ import (
 import (
 	"github.com/jbeshir/unanimity/client/listener/cliproto_down"
 	"github.com/jbeshir/unanimity/client/listener/cliproto_up"
+	"github.com/jbeshir/unanimity/client/relay"
 	"github.com/jbeshir/unanimity/config"
 	"github.com/jbeshir/unanimity/shared/chrequest"
 	"github.com/jbeshir/unanimity/shared/store"
@@ -22,35 +23,78 @@ import (
 // Main function for the handling goroutine for conn.
 func handleConn(conn *userConn) {
 
-	// Do cleanup in a defer, so if they crash us we still tidy up,
-	// at least here.
+	// Do cleanup in a defer, so if they crash us we still tidy up here.
+	// A small nod towards tolerating bad input, with much more needed.
 	defer func() {
 		// Remove the connection from our connection set if present.
 		// It will not be present if we are degraded or similar.
-		store.StartTransaction()
-		defer store.EndTransaction()
+		connectionsLock.Lock()
+
 		if _, exists := connections[conn]; exists {
 			delete(connections, conn)
 		}
+
+		// Remove the connection from our sessions map if present.
+		// It will not be present if we are degraded,
+		// or have replaced this connection.
+		if conn.session != 0 {
+			sessionsLock.Lock()
+			sessionConn := sessions[conn.session]
+			if sessionConn == conn {
+				delete(sessions, conn.session)
+			}
+			sessionsLock.Unlock()
+		}
+
+		connectionsLock.Unlock()
 	}()
 
 	for {
-		msg, ok := <-conn.conn.Received
-		if !ok {
-			break
-		}
+		select {
+		case msg, ok := <-conn.conn.Received:
+			if !ok {
+				break
+			}
 
-		switch *msg.MsgType {
-		case 2:
-			handleAuth(conn, msg.Content)
-		case 3:
-			handleFollowUsername(conn, msg.Content)
-		case 4:
-			handleFollowUser(conn, msg.Content)
-		case 5:
-			handleStopFollowingUser(conn, msg.Content)
-		default:
-			conn.conn.Close()
+			switch *msg.MsgType {
+			case 2:
+				handleAuth(conn, msg.Content)
+			case 3:
+				handleFollowUsername(conn, msg.Content)
+			case 4:
+				handleFollowUser(conn, msg.Content)
+			case 5:
+				handleStopFollowingUser(conn, msg.Content)
+			case 6:
+				handleSend(conn, msg.Content)
+			default:
+				conn.conn.Close()
+			}
+
+		case userMsg := <-conn.deliver:
+
+			// Get the sender's user ID.
+			store.StartTransaction()
+			attachedTo := store.AllAttachedTo(userMsg.Sender)
+			store.EndTransaction()
+
+			// We don't know who the sender is. Drop message.
+			if len(attachedTo) == 0 {
+				break
+			}
+
+			// Deliver any user messages given to us.
+			var deliverMsg cliproto_down.Received
+			deliverMsg.SenderUserId = new(uint64)
+			deliverMsg.SenderSessionId = new(uint64)
+			deliverMsg.Tag = new(string)
+			deliverMsg.Content = new(string)
+			*deliverMsg.SenderUserId = attachedTo[0]
+			*deliverMsg.SenderSessionId = userMsg.Sender
+			*deliverMsg.Tag = userMsg.Tag
+			*deliverMsg.Content = userMsg.Content
+
+			conn.conn.SendProto(10, &deliverMsg)
 		}
 	}
 
@@ -112,12 +156,14 @@ func handleAuth(conn *userConn, content []byte) {
 			}
 
 			// The session does exist.
+			sessionsLock.Lock()
+
 			conn.session = *msg.SessionId
 
-			// TODO: If this node is already attached to
+			// If this node is already attached to
 			// the session, drop the other connection.
-			if false {
-				// Not done yet.
+			if sessions[conn.session] != nil {
+				sessions[conn.session].conn.Close()
 			} else {
 				// Create change attaching this node ID
 				// to the session.
@@ -131,6 +177,11 @@ func handleAuth(conn *userConn, content []byte) {
 				req := makeRequest(chset)
 				go chrequest.Request(req)
 			}
+
+			// Put us in the sessions map.
+			sessions[conn.session] = conn
+
+			sessionsLock.Unlock()
 
 			// Tell the client they authenticated successfully.
 			sendAuthSuccess(conn, "")
@@ -363,6 +414,30 @@ func handleStopFollowingUser(conn *userConn, content []byte) {
 	sendStoppedFollowing(conn, *msg.UserId, "By Request")
 }
 
+// Can only be called from the handling goroutine for conn.
+func handleSend(conn *userConn, content []byte) {
+	var msg cliproto_up.Send
+	if err := proto.Unmarshal(content, &msg); err != nil {
+		conn.conn.Close()
+		return
+	}
+
+	// Authentication check.
+	if conn.session == 0 {
+		conn.conn.Close()
+		return
+	}
+
+	userMsg := new(relay.UserMessage)
+	userMsg.Sender = conn.session
+	userMsg.Recipient = *msg.Recipient
+	userMsg.Tag = *msg.Tag
+	userMsg.Content = *msg.Content
+
+	// Deliver this message.
+	deliver(userMsg)
+}
+
 // Can only be called from the handling goroutine for conn,
 // inside a transaction.
 func followUser(conn *userConn, followId uint64) {
@@ -383,9 +458,9 @@ func followUser(conn *userConn, followId uint64) {
 	conn.conn.SendProto(6, &dataMsg)
 
 	// Send information on all the user's sessions.
-	user.Attached(func(key, value string) {
+	user.Attached(func(key string) {
 		*dataMsg.Key = key
-		*dataMsg.Value = value
+		*dataMsg.Value = "true"
 		conn.conn.SendProto(6, &dataMsg)
 	})
 

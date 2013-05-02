@@ -29,15 +29,35 @@ func (s *Store) Value(key string) string {
 }
 
 // Enumerates the attach keys on the given entity.
-func (s *Store) Attached(cb func(key, value string)) {
+func (s *Store) Attached(cb func(key string)) {
 
-	for key, value := range s.values {
+	for key := range s.values {
 		if !strings.HasPrefix(key, "attach ") {
 			continue
 		}
 
-		cb(key, value)
+		cb(key)
 	}
+}
+
+// Returns all attached IDs as a slice.
+func (s *Store) AllAttached() []uint64 {
+
+	ids := make([]uint64, 0)
+
+	for key := range s.values {
+		if !strings.HasPrefix(key, "attach ") {
+			continue
+		}
+
+		// If there's a problem here, the shared state is corrupt.
+		// We don't handle that.
+		idStr := key[7:]
+		id, _ := strconv.ParseUint(idStr, 10, 64)
+		ids = append(ids, id)
+	}
+
+	return ids
 }
 
 // Returns the entity store for the entity with the given ID,
@@ -45,6 +65,24 @@ func (s *Store) Attached(cb func(key, value string)) {
 func GetEntity(id uint64) *Store {
 	s, _ := entityMap[id]
 	return s
+}
+
+// Returns the IDs of all entities the specified entity is attached to.
+// Returns an empty slice if the entity doesn't exist.
+func AllAttachedTo(id uint64) []uint64 {
+
+	attachedTo := make([]uint64, 0)
+
+	attachKey := "attach " + strconv.FormatUint(id, 10)
+
+	// TODO: Need indexes to make this not need iterating the entire store.
+	for otherEntity, store := range entityMap {
+		if _, exists := store.values[attachKey]; exists {
+			attachedTo = append(attachedTo, otherEntity)
+		}
+	}
+
+	return attachedTo
 }
 
 // Calls the given callbacks for all global and all entity data.
