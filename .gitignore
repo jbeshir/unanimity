@@ -30,5 +30,6 @@ unanimity.conf
 # ctags files
 tags
 
-# Compiled executable
+# Compiled executables.
 unanimity
+bench/register/register

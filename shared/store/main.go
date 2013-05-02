@@ -19,10 +19,6 @@
 */
 package store
 
-import (
-	"log"
-)
-
 type Change struct {
 	TargetEntity uint64
 	Key          string
@@ -57,7 +53,6 @@ func StartTransaction() {
 	<-transactionToken
 
 	// STUB
-	log.Print("starting transaction")
 }
 
 // Ends transaction. Changes made to the state are committed.
@@ -65,7 +60,6 @@ func EndTransaction() {
 	// STUB
 
 	transactionToken <- true
-	log.Print("ending transaction")
 }
 
 // Returns a new request ID, never before used.
