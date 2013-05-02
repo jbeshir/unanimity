@@ -2,6 +2,7 @@ package store
 
 import (
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -274,7 +275,9 @@ func applyChanges(changes []Change, idempotent bool) []Change {
 		idemChanges = append([]Change(nil), changes...)
 	}
 
-	// This type of loop lets us inject changes into the changeset.
+	// This type of loop lets us inject changes into the changeset,
+	// and then process those injected changes.
+	appliedRenames := make(map[string][]uint64)
 	for i := 0; i < len(idemChanges); i++ {
 
 		target := idemChanges[i].TargetEntity
@@ -405,7 +408,103 @@ func applyChanges(changes []Change, idempotent bool) []Change {
 		// If this changeset is already in an idempotent form,
 		// everything else is just setting/unsetting keys.
 		if !idempotent {
-			// TODO: Implement special operations.
+
+			// If this is setting an entity transient,
+			// check whether anything is attached to it.
+			// If not, inject a delete operation.
+			if target != 0 && key == "transient" && value != "" {
+				if len(store.AllAttached()) == 0 {
+
+					idemChanges = append(idemChanges,
+						Change{})
+					copy(idemChanges[i+2:],
+						idemChanges[i+1:])
+
+					idemChanges[i+1].TargetEntity = target
+					idemChanges[i+1].Key = "id"
+					idemChanges[i+1].Value = ""
+				}
+
+				store.values[key] = value
+
+				continue
+			}
+
+			// If we are detaching an entity from a transient
+			// entity, if there is now nothing left attached to
+			// the transient entity, inject a delete operation.
+			if target != 0 && strings.HasPrefix(key, "attach ") &&
+				value == "" &&
+				store.Value("transient") != "" {
+
+				delete(store.values, key)
+
+				if len(store.AllAttached()) == 0 {
+
+					idemChanges = append(idemChanges,
+						Change{})
+					copy(idemChanges[i+2:],
+						idemChanges[i+1:])
+
+					idemChanges[i+1].TargetEntity = target
+					idemChanges[i+1].Key = "id"
+					idemChanges[i+1].Value = ""
+				}
+
+				continue
+			}
+
+			if target != 0 && strings.HasPrefix(key, "name ") {
+				// Welcome to the fantabulous world of renaming.
+
+				// If we already applied this one,
+				// we should reapply it in case we recreated
+				// the entity since then. Unlikely but possible.
+				alreadyApplied := false
+				for _, entity := range appliedRenames[key] {
+					if target == entity {
+						alreadyApplied = true
+						break
+					}
+				}
+				if alreadyApplied {
+					store.values[key] = value
+					continue
+				}
+
+				// If there's no name conflict, it's okay.
+				kind := store.Value("kind")
+				existing := NameLookup(kind, key, value)
+				if existing == 0 || existing == target {
+					renames := appliedRenames[key]
+					renames = append(renames, target)
+					appliedRenames[key] = renames
+
+					store.values[key] = value
+					continue
+				}
+
+				// Otherwise, we need to figure out if the
+				// changes are satisfiable.
+				renames := tryNameSatisfy(appliedRenames,
+					idemChanges, i, existing)
+
+				if len(renames) == 0 {
+					// Not satisfiable. Drop the rename.
+					idemChanges = append(idemChanges[:i],
+						idemChanges[i+1:]...)
+
+					// Don't increment our position.
+					i--
+
+					continue
+				} else {
+					applyRenames(renames, idemChanges, key)
+					applied := appliedRenames[key]
+					applied = append(applied, renames...)
+					appliedRenames[key] = applied
+				}
+			}
 		}
 
 		if value != "" {
@@ -416,6 +515,110 @@ func applyChanges(changes []Change, idempotent bool) []Change {
 	}
 
 	return idemChanges
+}
+
+func tryNameSatisfy(appliedRenames map[string][]uint64, idemChanges []Change,
+	i int, existing uint64) []uint64 {
+
+	target := idemChanges[i].TargetEntity
+	key := idemChanges[i].Key
+	kind := entityMap[target].values["kind"]
+
+	changing := []uint64{idemChanges[i].TargetEntity}
+	for {
+		found := false
+		for j := i; j < len(idemChanges); j++ {
+
+			// Look only for the entity with which we're
+			// conflicting. If we don't find it, we fail.
+			jTarget := idemChanges[j].TargetEntity
+			if jTarget != existing {
+				continue
+			}
+			if idemChanges[j].Key != key {
+				continue
+			}
+
+			// We found a name change for the existing entity
+			// with the name we need.
+			found = true
+			jValue := idemChanges[j].Value
+
+			// If we already applied this change,
+			// then it can't free the name for us. Fail.
+			for _, accepted := range appliedRenames[key] {
+				if accepted == jTarget {
+					return nil
+				}
+			}
+
+			// Add to the list of name changes we need to allow,
+			// in order to satisfy our original change.
+			changing = append(changing, jTarget)
+
+			// Look for a name conflict to this entity's rename.
+			existing = NameLookup(kind, key, jValue)
+
+			// If this entity is not really changing name,
+			// we've hit a dead end; name changes can't be
+			// satisfied.
+			if existing == jTarget {
+				return nil
+			}
+
+			// If there's no conflict, we have a satisfiable
+			// sequence of name changes.
+			if existing == 0 {
+				return changing
+			}
+
+			// If it's a conflict with an entity whose name we're
+			// already trying to change, we have a satisfiable
+			// sequence of name changes.
+			for _, id := range changing {
+				if existing == id {
+					return changing				
+				}
+			}
+
+			// Otherwise, we loop back around with one more entity
+			// in changing, and a new value for existing.
+			// Eventually we will fail or succeed.
+		}
+
+		// Couldn't find a rename for the entity with a conflicting
+		// name. Can't satisfy this rename.
+		if !found {
+			return nil
+		}
+	}
+}
+
+// Applies all the renames of the given name key for the given entities.
+func applyRenames(entities []uint64, changes []Change, key string) {
+
+	for _, entity := range entities {
+		for j := 0; j < len(changes); j++ {
+
+			// Look only for the entity with which we're
+			// conflicting. If we don't find it, we fail.
+			jTarget := changes[j].TargetEntity
+			if jTarget != entity {
+				continue
+			}
+			if changes[j].Key != key {
+				continue
+			}
+
+			// We found the name change to apply.
+			jValue := changes[j].Value
+
+			// We know this entity had a name we wanted,
+			// and so definitely exists. Just apply the change.
+			entityMap[jTarget].values[key] = jValue
+			break
+		}
+	}
 }
 
 // Returns whether the Paxos round represented by proposal1 and leader1 is
