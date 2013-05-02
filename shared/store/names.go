@@ -12,7 +12,7 @@ func NameLookup(entityType, nameKey, nameValue string) uint64 {
 	// TODO: Keep some kind of indexes so we don't need to
 	// do this by iterating through all entities.
 	for id, store := range entityMap {
-		if store.values["type"] != entityType {
+		if store.values["kind"] != entityType {
 			continue
 		}
 		if store.values[nameKey] == nameValue {
