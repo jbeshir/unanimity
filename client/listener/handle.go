@@ -492,13 +492,15 @@ func handleSend(conn *userConn, content []byte) {
 	}
 
 	sessionsLock.Lock()
-	defer sessionsLock.Unlock()
 
 	// Authentication check.
 	if conn.session == 0 {
 		conn.conn.Close()
+		sessionsLock.Unlock()
 		return
 	}
+
+	sessionsLock.Unlock()
 
 	userMsg := new(relay.UserMessage)
 	userMsg.Sender = conn.session
@@ -539,6 +541,7 @@ func followUser(conn *userConn, followId uint64) {
 	// Send a done message to indicate that we are finished.
 	var doneMsg cliproto_down.UserDataDone
 	doneMsg.UserId = dataMsg.UserId
+	doneMsg.FirstUnapplied = dataMsg.FirstUnapplied
 	conn.conn.SendProto(7, &doneMsg)
 }
 
