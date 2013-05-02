@@ -1,6 +1,7 @@
 package connect
 
 import (
+	"log"
 	"net"
 	"sync"
 )
@@ -60,6 +61,7 @@ func newBaseConn(conn net.Conn) *BaseConn {
 	b.disconnected = make(chan struct{})
 	b.send = make(chan *baseproto.Message, 5)
 	b.stop = make(chan struct{})
+	b.receivedCapabilities = make(chan *baseproto.Message, 1)
 	b.received = make(chan *baseproto.Message, 5)
 
 	b.Received = b.received
@@ -164,6 +166,7 @@ func (b *BaseConn) readLoop() {
 		if err != nil {
 			break
 		}
+
 		if *msg.MsgType == 1 {
 			b.receivedCapabilities <- msg
 		} else {
@@ -275,6 +278,7 @@ func (b *BaseConn) writeCapabilities() error {
 func (b *BaseConn) writeMsg(msg *baseproto.Message) error {
 	msgBuffer, err := proto.Marshal(msg)
 	if err != nil {
+		log.Print("shared/connect: error marshalling msg ", err)
 		return err
 	}
 
@@ -316,6 +320,7 @@ func (b *BaseConn) SendProto(msgType uint32, msg proto.Message) bool {
 
 	content, err := proto.Marshal(msg)
 	if err != nil {
+		log.Print("shared/connect: error marshalling msg ", err)
 		b.Close()
 		return false
 	}
