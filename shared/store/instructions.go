@@ -300,6 +300,7 @@ func applyChanges(changes []Change, idempotent bool) []Change {
 
 				idemChanges = append(idemChanges, Change{})
 				copy(idemChanges[i+2:], idemChanges[i+1:])
+				idemChanges[i+1].TargetEntity = 0
 				idemChanges[i+1].Key = "next entity"
 				idemChanges[i+1].Value = nextNewStr
 
@@ -345,7 +346,29 @@ func applyChanges(changes []Change, idempotent bool) []Change {
 			// If this was not an idempotent changeset,
 			// do needed special operation work.
 			if !idempotent {
-				// TODO: Implement special operations.
+
+				// Inject changes detaching this entity from
+				// all entities it is attached to.
+				attachedTo := AllAttachedTo(target)
+
+				// Injects a block of new changes.
+				add := len(attachedTo)
+				newChanges := make([]Change,
+					len(idemChanges)+add)
+
+				copy(newChanges[:i+1], idemChanges[:i+1])
+				copy(newChanges[i+1+add:], idemChanges[i+1:])
+				idemChanges = newChanges
+
+				// Fill out changes.
+				entityIdStr := strconv.FormatUint(target, 10)
+				attachKey := "attach " + entityIdStr
+				for j := range attachedTo {
+					idemChanges[i+1+j].TargetEntity =
+						attachedTo[j]
+					idemChanges[i+1+j].Key = attachKey
+					idemChanges[i+1+j].Value = ""
+				}
 			}
 
 			// Delete the entity if it exists.
