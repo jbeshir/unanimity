@@ -62,11 +62,23 @@ func process() {
 						targetConns = len(coreNodes)
 					}
 
-					newOutgoing := targetConns - len(connections)
+					newOutgoing := targetConns -
+						len(connections)
+
+					used := -1
 					for newOutgoing > 0 {
-						r := processRand.Intn(len(coreNodes))
+						r := processRand.Intn(
+							len(coreNodes))
+
+						// Don't do the same node
+						// twice.
+						if r == used {
+							continue
+						}
+
 						node := coreNodes[r]
 						if connections[node] == nil {
+							used = r
 							go tryOutgoing(node)
 							newOutgoing--
 						}
