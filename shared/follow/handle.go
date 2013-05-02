@@ -1,6 +1,7 @@
 package follow
 
 import (
+	"log"
 	"time"
 )
 
@@ -435,6 +436,8 @@ func handleLeader(f *followConn, content []byte) {
 // The Bursting message should already have been sent,
 // and f.sendingBurst set to true, before calling this asynchronously.
 func sendBurst(f *followConn) {
+
+	log.Print("shared/follow: sending burst to ", f.node)
 
 	globalProp := new(fproto.GlobalProperty)
 	globalProp.Key = new(string)
