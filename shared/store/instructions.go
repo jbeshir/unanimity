@@ -282,27 +282,21 @@ func EndBurst(start uint64, chrequests []ChangeRequest) {
 		applyChanges(chrequests[i].Changeset, true)
 	}
 
-	setInstructionStart(start)
 	firstUnapplied = start
+	setInstructionStart(start)
 	degraded = false
 
 	// Run callbacks for when we change degraded status.
 	for _, cb := range degradedCallbacks {
 		cb()
 	}
+
+	// Apply any instructions we can now apply.
+	tryApply()
 }
 
-// Sets the node's start instruction number.
-// Called by both SetInstructionNumber,
-// and the automatic removal of applied instructions.
+// Sets the node's start instruction number at the end of a burst.
 func setInstructionStart(newStart uint64) {
-
-	// If our first unapplied instruction would become in the past,
-	// panic; this should never happen.
-	if firstUnapplied < newStart {
-		panic("tried to set start instruction number past " +
-			"first unapplied instruction number")
-	}
 
 	// Copy down the contents of the slots buffer,
 	// then clear the end of it.
@@ -321,6 +315,11 @@ func setInstructionStart(newStart uint64) {
 // Keeps applying instructions until we run out of chosen instructions.
 // Called after an instruction becomes chosen.
 func tryApply() {
+
+	// We never apply anything while degraded.
+	if degraded {
+		return
+	}
 
 	for {
 		relative := int(firstUnapplied - start)
