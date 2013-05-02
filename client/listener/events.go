@@ -75,8 +75,27 @@ func handleDeleting(entityId uint64) {
 
 	// If it's a user deletion, find any sessions attached to the user,
 	// and drop any connections attached to those.
-	// TODO: Cancel any follows of that user.
+	// Also cancel any follows of that user.
 	case "user":
+		connectionsLock.Lock()
+		defer connectionsLock.Unlock()
+
+		// TODO: Expensive loop, should maintain index to avoid this.
+		for conn, _ := range connections {
+			for i, followed := range conn.following {
+				if followed != entityId {
+					continue
+				}
+
+				fwing := conn.following
+				fwing = append(fwing[:i], fwing[i+1:]...)
+				conn.following = fwing
+
+				sendStoppedFollowing(conn, entityId,
+					"User Deleted")
+			}
+		}
+
 		sessionIds := entity.AllAttached()
 		if len(sessionIds) > 0 {
 			sessionsLock.Lock()

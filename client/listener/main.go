@@ -53,12 +53,14 @@ func init() {
 }
 
 type userConn struct {
-	conn        *connect.BaseConn
-	following   []uint64
-	deliver     chan *relay.UserMessage
+	conn    *connect.BaseConn
+	deliver chan *relay.UserMessage
+
+	// Must only be accessed during a transaction.
+	following []uint64
 
 	// Must only be accessed holding the sessions lock.
-	session     uint64
+	session uint64
 
 	// Must only be accessed holding the waiting lock.
 	waitingAuth *authData

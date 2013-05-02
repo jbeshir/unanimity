@@ -62,7 +62,6 @@ func handleConn(conn *userConn) {
 		}
 		sessionsLock.Unlock()
 
-
 		connectionsLock.Unlock()
 	}()
 
@@ -136,7 +135,7 @@ func handleAuth(conn *userConn, content []byte) {
 	defer sessionsLock.Unlock()
 	waitingLock.Lock()
 	defer waitingLock.Unlock()
-	
+
 	if conn.session != 0 || conn.waitingAuth != nil {
 		conn.conn.Close()
 		return
@@ -260,7 +259,7 @@ func handleAuth(conn *userConn, content []byte) {
 			}
 			hash := string(key)
 			salt := string(saltBytes)
-			
+
 			// Create the new user.
 			req := makeNewUserRequest(newUser, hash, salt, false)
 			go chrequest.Request(req)
@@ -423,6 +422,9 @@ func handleStopFollowingUser(conn *userConn, content []byte) {
 		return
 	}
 
+	// Start transaction.
+	store.StartTransaction()
+	defer store.EndTransaction()
 	sessionsLock.Lock()
 	defer sessionsLock.Unlock()
 
