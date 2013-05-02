@@ -87,6 +87,7 @@ func main() {
 	}
 }
 
+var started bool
 var count uint64
 var start time.Time
 var delay time.Duration
@@ -101,11 +102,6 @@ func handleMsg(content []byte) {
 		return
 	}
 
-	// Provide an overall rate of messages.
-	if count == 0 {
-		start = time.Now()
-	}
-
 	// Provide a count of messages.
 	count++
 
@@ -118,13 +114,26 @@ func handleMsg(content []byte) {
 	delay += time.Now().Sub(time.Unix(0, timeUnixNanos))
 
 	if count % uint64(*print) == 0 {
+
+		// We discard the first period's results because they are
+		// contaminated by connection setup delays, which while
+		// somewhat interesting are not what we are measuring.
+		if !started {
+			count = 0
+			start = time.Now()
+			delay = 0
+
+			started = true
+			return
+		}
+
 		msgIndex, _ := strconv.ParseUint(parts[1], 10, 64)
-		loss := float64(msgIndex) / float64(count) - 1
-		runningSecs := uint64(time.Now().Sub(start) / time.Second)
+		loss := 1 - (float64(count+uint64(*print)) / float64(msgIndex))
+		runningSecs := float64(time.Now().Sub(start) / time.Second)
 
 		log.Print("count: ", count)
 		if runningSecs > 0 {
-			log.Print("msgs/sec: ", count / runningSecs)
+			log.Print("msgs/sec: ", float64(count) / runningSecs)
 		}
 		log.Print("average latency: ", delay / time.Duration(count))
 		log.Print("approx msg loss: ", loss * 100, "%")
