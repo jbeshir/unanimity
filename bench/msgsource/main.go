@@ -36,9 +36,12 @@ import (
 	"github.com/jbeshir/unanimity/shared/connect"
 )
 
+var rate *uint
+
 func main() {
 	// Define and parse flags.
 	id := flag.Uint("id", 0, "Set the client node ID to connect to.")
+	rate = flag.Uint("rate", 0, "Sets the maximum messages per second.")
 	flag.Parse()
 
 	// Validate flags.
@@ -123,8 +126,22 @@ func sendMessages(conn *connect.BaseConn) {
 	*msg.Tag = "benchmark"
 
 	i := uint64(0)
+	prevSec := time.Now().Unix()
+	count := uint(0)
 	for {
+		sec := time.Now().Unix()
+		if sec != prevSec {
+			prevSec = sec
+			count = 0
+		}
+
+		// If we've hit our cap, busyloop until we can send again.
+		if *rate != 0 && count >= *rate {
+			continue
+		}
+
 		i++
+		count++
 
 		timeStr := strconv.FormatInt(time.Now().UnixNano(), 10)
 		numberStr := strconv.FormatUint(i, 10)
