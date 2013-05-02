@@ -580,6 +580,20 @@ func addAccepted(node uint16, accepted *coproto.Accepted) bool {
 	ourStart := store.InstructionStart()
 	relativeSlot := int(slot - ourStart)
 
+	// If our instruction slot slice is not this long,
+	// we know we do not have any value in this slot yet,
+	// and so need to add a new one.
+	if len(slots) <= relativeSlot {
+		chreq := makeExtChangeRequest(newReq)
+		newInst := store.AddInstructionValue(slot, chreq)
+		if newInst == nil {
+			return false
+		}
+		newInst.Accept(node, msgProposal, msgLeader)
+
+		return true
+	}
+
 	// If we have already chosen an instruction in this slot,
 	// we can ignore subsequent Accepted messages for it.
 	if len(slots[relativeSlot]) == 1 && slots[relativeSlot][0].IsChosen() {
