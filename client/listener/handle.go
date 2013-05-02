@@ -59,7 +59,7 @@ func handleConn(conn *userConn) {
 				// from that session.
 				idStr := strconv.FormatUint(uint64(config.Id()),
 					10)
-				ourAttachStr := "attach " +idStr
+				ourAttachStr := "attach " + idStr
 
 				chset := make([]store.Change, 1)
 				chset[0].TargetEntity = conn.session
@@ -135,11 +135,64 @@ func handleAuth(conn *userConn, content []byte) {
 		return
 	}
 
+	// Try to get information, then release locks and hash the password.
+	// If the situation changes we may have to hash it again anyway,
+	// but scrypt hashing is extremely expensive and we want to try to
+	// do this without holding our locks in the vast majority of cases.
+	var tryPassGenerated bool
+	var trySaltGenerated bool
+	var tryPass, trySalt, tryKey string
+	if *msg.Password != "" {
+		tryPass = *msg.Password
+
+		store.StartTransaction()
+
+		userId := store.NameLookup("user", "name username",
+			*msg.Username)
+		if userId != 0 {
+			user := store.GetEntity(userId)
+			if user != nil {
+				trySalt = user.Value("auth salt")
+			}
+		}
+
+		store.EndTransaction()
+
+		if trySalt == "" {
+			trySaltGenerated = true
+
+			var err error
+			trySalt, tryKey, err = genRandomSalt(conn,
+				[]byte(tryPass))
+
+			if err != nil {
+				return
+			}
+		} else {
+			var err error
+			tryPass, err = genKey(conn, []byte(tryPass),
+				[]byte(trySalt))
+
+			if err != nil {
+				return
+			}
+		}
+
+	} else {
+		tryPassGenerated = true
+		trySaltGenerated = true
+
+		var err error
+		tryPass, trySalt, tryKey, err = genRandomPass(conn)
+		if err != nil {
+			return
+		}
+	}
+
 	// TODO: Validate username and password against constraints.
 
-	// We hold this through quite a lot of logic,
-	// including password hashing, which is useful to parallelise.
-	// TODO: Don't block the whole node for so long here.
+	// We hold this through quite a lot of logic.
+	// Would be good to be locked less.
 	store.StartTransaction()
 	defer store.EndTransaction()
 	sessionsLock.Lock()
@@ -163,13 +216,23 @@ func handleAuth(conn *userConn, content []byte) {
 		user := store.GetEntity(userId)
 
 		// Try to authenticate them to it.
-		salt := []byte(user.Value("auth salt"))
-		pass := []byte(*msg.Password)
-		key, err := scrypt.Key(pass, salt, 16384, 8, 1, 32)
-		if err != nil {
-			sendAuthFail(conn, "Invalid Password")
-			return
+		var key string
+
+		// If their salt and password matches our attempt above,
+		// we can just take that key.
+		salt := user.Value("auth salt")
+		if trySalt == salt && tryPass == *msg.Password {
+			key = tryKey
+		} else {
+			saltBytes := []byte(user.Value("auth salt"))
+			passBytes := []byte(*msg.Password)
+			var err error
+			key, err = genKey(conn, passBytes, saltBytes)
+			if err != nil {
+				return
+			}
 		}
+
 		if user.Value("auth password") != string(key) {
 			sendAuthFail(conn, "Invalid Password")
 			return
@@ -244,32 +307,20 @@ func handleAuth(conn *userConn, content []byte) {
 				return
 			}
 
-			// Get a cryptographically random salt.
-			saltBytes := make([]byte, 32)
-			read := 0
-			for read != len(saltBytes) {
-				n, err := rand.Read(saltBytes[read:])
-				read += n
+			var salt string
+			var hash string
+			if tryPass == newPass && trySaltGenerated {
+				salt = trySalt
+				hash = tryKey
+			} else {
+				passBytes := []byte(newPass)
+
+				var err error
+				salt, hash, err = genRandomSalt(conn, passBytes)
 				if err != nil {
-					// Out of random?
-					// TODO: Unsure when this can happen.
-					sendAuthFail(conn, "Try Later")
 					return
 				}
 			}
-
-			// Generate their salted, hashed password.
-			passBytes := []byte(*msg.Password)
-			key, err := scrypt.Key(passBytes, saltBytes, 16384,
-				8, 1, 32)
-			if err != nil {
-				// If you can get here, it's probably
-				// because of a bad password.
-				sendAuthFail(conn, "Invalid Password")
-				return
-			}
-			hash := string(key)
-			salt := string(saltBytes)
 
 			// Create the new user.
 			req := makeNewUserRequest(newUser, hash, salt, false)
@@ -291,44 +342,19 @@ func handleAuth(conn *userConn, content []byte) {
 			return
 		}
 
-		// Get a cryptographically random password.
-		passBytes := make([]byte, 128)
-		for read := 0; read != len(passBytes); {
-			n, err := rand.Read(passBytes[read:])
-			read += n
+		var hash string
+		var salt string
+		if tryPassGenerated && trySaltGenerated {
+			newPass = tryPass
+			salt = trySalt
+			hash = tryKey
+		} else {
+			var err error
+			newPass, salt, hash, err = genRandomPass(conn)
 			if err != nil {
-				// Out of random?
-				// TODO: Unsure when this can happen.
-				sendAuthFail(conn, "Try Later")
 				return
 			}
 		}
-		newPass = string(passBytes)
-
-		// Get a cryptographically random salt.
-		saltBytes := make([]byte, 32)
-		for read := 0; read != len(saltBytes); {
-			n, err := rand.Read(saltBytes[read:])
-			read += n
-			if err != nil {
-				// Out of random?
-				// TODO: Unsure when this can happen.
-				sendAuthFail(conn, "Try Later")
-				return
-			}
-		}
-
-		// Generate their salted, hashed password.
-		key, err := scrypt.Key(passBytes, saltBytes, 16384,
-			8, 1, 32)
-		if err != nil {
-			// If you can get here, it's probably
-			// because of a bad password.
-			sendAuthFail(conn, "Invalid Password")
-			return
-		}
-		hash := string(key)
-		salt := string(saltBytes)
 
 		waitingLock.Lock()
 
@@ -705,4 +731,58 @@ func makeRequest(changes []store.Change) *store.ChangeRequest {
 	req.Changeset = changes
 
 	return req
+}
+
+func genRandomPass(conn *userConn) (pass, salt, key string, err error) {
+
+	// Get a cryptographically random password.
+	passBytes := make([]byte, 128)
+	for read := 0; read != len(passBytes); {
+		n, err := rand.Read(passBytes[read:])
+		read += n
+		if err != nil {
+			// Out of random?
+			// TODO: Unsure when this can happen.
+			sendAuthFail(conn, "Try Later")
+			return "", "", "", err
+		}
+	}
+	pass = string(passBytes)
+
+	salt, key, err = genRandomSalt(conn, passBytes)
+	return
+}
+
+func genRandomSalt(conn *userConn, pass []byte) (salt, key string, err error) {
+
+	// Get a cryptographically random salt.
+	saltBytes := make([]byte, 32)
+	for read := 0; read != len(saltBytes); {
+		n, err := rand.Read(saltBytes[read:])
+		read += n
+		if err != nil {
+			// Out of random?
+			// TODO: Unsure when this can happen.
+			sendAuthFail(conn, "Try Later")
+			return "", "", err
+		}
+	}
+	salt = string(saltBytes)
+
+	key, err = genKey(conn, pass, saltBytes)
+	return
+}
+
+func genKey(conn *userConn, pass, salt []byte) (key string, err error) {
+
+	// Generate their salted, hashed password.
+	keyBytes, err := scrypt.Key(pass, salt, 16384, 8, 1, 32)
+	if err != nil {
+		// If you can get here, it's probably
+		// because of a bad password.
+		sendAuthFail(conn, "Invalid Password")
+		return "", err
+	}
+
+	return string(keyBytes), nil
 }
