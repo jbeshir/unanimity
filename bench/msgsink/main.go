@@ -120,10 +120,12 @@ func handleMsg(content []byte) {
 	if count % uint64(*print) == 0 {
 		msgIndex, _ := strconv.ParseUint(parts[1], 10, 64)
 		loss := float64(msgIndex) / float64(count) - 1
-		runningSecs := time.Now().Sub(start) / time.Second
+		runningSecs := uint64(time.Now().Sub(start) / time.Second)
 
 		log.Print("count: ", count)
-		log.Print("msgs/sec: ", count / uint64(runningSecs))
+		if runningSecs > 0 {
+			log.Print("msgs/sec: ", count / runningSecs)
+		}
 		log.Print("average latency: ", delay / time.Duration(count))
 		log.Print("approx msg loss: ", loss * 100, "%")
 	}
