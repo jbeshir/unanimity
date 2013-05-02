@@ -35,9 +35,14 @@ import (
 	"github.com/jbeshir/unanimity/shared/connect"
 )
 
+var print *uint
+
 func main() {
 	// Define and parse flags.
 	id := flag.Uint("id", 0, "Set the client node ID to connect to.")
+	print = flag.Uint("print", 10000, "Sets number of messages to print " +
+		"after.")
+
 	flag.Parse()
 
 	// Validate flags.
@@ -83,9 +88,8 @@ func main() {
 }
 
 var count uint64
+var start time.Time
 var delay time.Duration
-
-const printPeriod = 10000
 
 func handleMsg(content []byte) {
 	var msg cliproto_down.Received
@@ -95,6 +99,11 @@ func handleMsg(content []byte) {
 
 	if *msg.Tag != "benchmark" {
 		return
+	}
+
+	// Provide an overall rate of messages.
+	if count == 0 {
+		start = time.Now()
 	}
 
 	// Provide a count of messages.
@@ -108,11 +117,13 @@ func handleMsg(content []byte) {
 	timeUnixNanos, _ := strconv.ParseInt(parts[0], 10, 64)
 	delay += time.Now().Sub(time.Unix(0, timeUnixNanos))
 
-	if count % printPeriod == 0 {
+	if count % uint64(*print) == 0 {
 		msgIndex, _ := strconv.ParseUint(parts[1], 10, 64)
 		loss := float64(msgIndex) / float64(count) - 1
+		runningSecs := time.Now().Sub(start) / time.Second
 
 		log.Print("count: ", count)
+		log.Print("msgs/sec: ", count / uint64(runningSecs))
 		log.Print("average latency: ", delay / time.Duration(count))
 		log.Print("approx msg loss: ", loss * 100, "%")
 	}
