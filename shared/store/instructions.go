@@ -1,6 +1,7 @@
 package store
 
 import (
+	"strconv"
 	"time"
 )
 
@@ -286,7 +287,48 @@ func applyChanges(changes []Change, idempotent bool) []Change {
 			// If this was not an idempotent changeset,
 			// do needed special operation work.
 			if !idempotent {
-				// TODO: Implement special operations.
+
+				// Get a new entity ID, and inject a change
+				// incrementing the next entity ID.
+				newIdStr := Global.Value("next entity")
+				if newIdStr == "" {
+					newIdStr = "65536"
+				}
+
+				newId, _ := strconv.ParseUint(newIdStr, 10, 64)
+				nextNewStr := strconv.FormatUint(newId+1, 10)
+
+				idemChanges = append(idemChanges, Change{})
+				copy(idemChanges[i+2:], idemChanges[i+1:])
+				idemChanges[i+1].Key = "next entity"
+				idemChanges[i+1].Value = nextNewStr
+
+				// Set this change to be creating that entity.
+				idemChanges[i].TargetEntity = newId
+				idemChanges[i].Value = newIdStr
+
+				// Rewrite references to this ID everywhere
+				// onwards in the changeset to refer to the
+				// new ID. Include attach keys.
+				old := target
+				oldIdStr := strconv.FormatUint(target, 10)
+				oldAttachKey := "attach " + oldIdStr
+				newAttachKey := "attach " + newIdStr
+				for j := i; j < len(idemChanges); j++ {
+					if idemChanges[j].TargetEntity == old {
+						idemChanges[j].TargetEntity =
+							newId
+					}
+
+					if idemChanges[j].Key == oldAttachKey {
+						idemChanges[j].Key =
+							newAttachKey
+					}
+				}
+
+				// Update our local variables.
+				target = idemChanges[i].TargetEntity
+				value = idemChanges[i].Value
 			}
 
 			// Create the entity, deleting any previous if needed.
@@ -321,15 +363,20 @@ func applyChanges(changes []Change, idempotent bool) []Change {
 
 		// Otherwise, if the target doesn't exist, discard the change.
 		// Should not happen in an already idempotent changeset.
-		entity := entityMap[target]
-		if entity == nil {
-			idemChanges = append(idemChanges[:i],
-				idemChanges[i+1:]...)
+		var store *Store
+		if target != 0 {
+			store = entityMap[target]
+			if store == nil {
+				idemChanges = append(idemChanges[:i],
+					idemChanges[i+1:]...)
 
-			// Don't increment our position.
-			i--
+				// Don't increment our position.
+				i--
 
-			continue
+				continue
+			}
+		} else {
+			store = &Global
 		}
 
 		// If this changeset is already in an idempotent form,
@@ -339,9 +386,9 @@ func applyChanges(changes []Change, idempotent bool) []Change {
 		}
 
 		if value != "" {
-			entity.values[key] = value
+			store.values[key] = value
 		} else {
-			delete(entity.values, key)
+			delete(store.values, key)
 		}
 	}
 
