@@ -91,6 +91,7 @@ func handlePosition(f *followConn, content []byte) {
 		f.sendingBurst = true
 		burstMsg := new(baseproto.Message)
 		burstMsg.MsgType = new(uint32)
+		burstMsg.Content = []byte{}
 		*burstMsg.MsgType = 3
 		f.conn.Send(burstMsg)
 
