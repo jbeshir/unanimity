@@ -25,7 +25,7 @@ func process() {
 	if !store.Degraded() {
 
 		for _, node := range config.ClientNodes() {
-			if node != config.Id() {
+			if node == config.Id() {
 				continue
 			}
 
@@ -61,7 +61,7 @@ func process() {
 			}
 
 			for _, node := range config.ClientNodes() {
-				if node != config.Id() {
+				if node == config.Id() {
 					continue
 				}
 				if len(connections[node]) > 0 {
