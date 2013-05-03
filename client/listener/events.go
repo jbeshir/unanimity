@@ -1,6 +1,7 @@
 package listener
 
 import (
+	"log"
 	"strconv"
 	"strings"
 )
@@ -54,6 +55,7 @@ func handleApplied(slot uint64, idemChanges []store.Change) {
 
 	relativeSlot := int(slot - store.InstructionStart())
 	slots := store.InstructionSlots()
+	requestNode := slots[relativeSlot][0].ChangeRequest().RequestNode
 	requestId := slots[relativeSlot][0].ChangeRequest().RequestId
 
 	sessionsLock.Lock()
@@ -64,9 +66,11 @@ func handleApplied(slot uint64, idemChanges []store.Change) {
 
 	// If there is a connection which has this as its waiting request,
 	// have it complete authentication.
-	waitingConn := waiting[requestId]
-	if waitingConn != nil {
-		handleAuthComplete(waitingConn, idemChanges)
+	if requestNode == config.Id() {
+		waitingConn := waiting[requestId]
+		if waitingConn != nil {
+			handleAuthComplete(waitingConn, idemChanges)
+		}
 	}
 
 	ourAttachStr := "attach " + strconv.FormatUint(uint64(config.Id()), 10)
@@ -84,6 +88,10 @@ func handleApplied(slot uint64, idemChanges []store.Change) {
 
 				sessionId := idemChanges[i].TargetEntity
 				if conn := sessions[sessionId]; conn != nil {
+					log.Print("client/listener: " +
+						"detached from existing " +
+						"session")
+
 					conn.conn.Close()
 				}
 
@@ -188,6 +196,9 @@ func handleDeleting(entityId uint64) {
 
 			for _, sessionId := range sessionIds {
 				if conn := sessions[sessionId]; conn != nil {
+					log.Print("client/listener: " +
+						"connected user deleted")
+
 					conn.conn.Close()
 				}
 			}
@@ -205,6 +216,7 @@ func handleDeleting(entityId uint64) {
 		defer sessionsLock.Unlock()
 
 		if conn := sessions[entityId]; conn != nil {
+			log.Print("client/listener: connected session deleted")
 			conn.conn.Close()
 			delete(sessions, entityId)
 		}
