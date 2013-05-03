@@ -2,10 +2,7 @@
 	Benchmark test program for unanimity.
 
 	Creates a specified number of registered accounts, sequentially.
-	Waits for each to be registered before making the next.
 	Intended for testing how RAM usage scales with user entities.
-
-	Connects only to a single node.
 */
 package main
 
@@ -23,6 +20,11 @@ import (
 )
 
 import (
+	"code.google.com/p/goprotobuf/proto"
+)
+
+import (
+	"github.com/jbeshir/unanimity/client/listener/cliproto_down"
 	"github.com/jbeshir/unanimity/client/listener/cliproto_up"
 	"github.com/jbeshir/unanimity/config"
 	"github.com/jbeshir/unanimity/shared/connect"
@@ -30,21 +32,45 @@ import (
 
 func main() {
 	// Define and parse flags.
-	id := flag.Uint("id", 0, "Set the client node ID to connect to.")
+	conns := flag.Uint("conns", 20, "Sets number of connections to use.")
 	count := flag.Uint("count", 1000, "Number of users to create.")
 	flag.Parse()
 
 	// Validate flags.
-	if *id == 0 || *id > 0xFFFF {
-		log.Fatal("Invalid node ID specified.")
+	if *conns == 0 {
+		log.Fatal("Number of connections must be at least 1.")
+	}
+	if *count % *conns != 0 {
+		log.Fatal("Please use a number of users which divides " +
+			"into the number of connections.")
 	}
 
 	// Load configuration from config file.
 	loadConfig()
 
-	fmt.Printf("Loaded configuration, ID to connect to is %d.\n", *id)
-	for i := uint(0); i < *count; i++ {
-		conn, err := connect.TestDial(uint16(*id))
+	log.Print("Loaded configuration, starting...")
+
+	// Launch the specified number of goroutines registering users.
+	perConnCount := *count / *conns
+	doneChan := make(chan bool, *conns)
+
+	clientNodes := config.ClientNodes()
+	for i := 0; i < int(*conns); i++ {
+		node := clientNodes[i % len(clientNodes)]
+		prefix := "Test-" + strconv.FormatUint(uint64(i), 10) + "-"
+		go register(node, prefix, perConnCount, doneChan)
+	}
+
+	// Wait until they're all done.
+	for i := uint(0); i < *conns; i++ {
+		<-doneChan
+	}
+}
+
+func register(node uint16, prefix string, limit uint, doneChan chan bool) {
+
+	for i := uint(0); i < limit; i++ {
+		conn, err := connect.TestDial(node)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -53,25 +79,39 @@ func main() {
 		msg.Username = new(string)
 		msg.Password = new(string)
 		msg.SessionId = new(uint64)
-		*msg.Username = "Test" + strconv.FormatUint(uint64(i), 10)
-		*msg.Password = "Test" + strconv.FormatUint(uint64(i), 10)
+		*msg.Username = prefix + strconv.FormatUint(uint64(i), 10)
+		*msg.Password = prefix + strconv.FormatUint(uint64(i), 10)
 		conn.SendProto(2, &msg)
 
 	connloop:
 		for {
 			respMsg, ok := <-conn.Received
 			if !ok {
+				log.Fatal("connection error to ", node)
 				break connloop
-				log.Fatal("connection error")
 			}
 
 			switch *respMsg.MsgType {
+			case 2:
+				// Terminates.
+				handleAuthFail(respMsg.Content)
 			case 3:
 				conn.Close()
 				break connloop
 			}
 		}
 	}
+
+	doneChan <- true
+}
+
+func handleAuthFail(content []byte) {
+	var msg cliproto_down.AuthenticationFailed
+	if err := proto.Unmarshal(content, &msg); err != nil {
+		log.Fatal(err)
+	}
+
+	log.Fatal("auth failed: ", *msg.Reason)
 }
 
 func loadConfig() {
