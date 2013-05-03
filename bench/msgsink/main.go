@@ -90,9 +90,11 @@ func main() {
 var started bool
 var count uint64
 var start time.Time
-var delay time.Duration
+var delay uint64
 
 func handleMsg(content []byte) {
+	arrived := time.Now().UnixNano()
+
 	var msg cliproto_down.Received
 	if err := proto.Unmarshal(content, &msg); err != nil {
 		log.Fatal(err)
@@ -110,8 +112,8 @@ func handleMsg(content []byte) {
 	// *very* closely matched system clocks, with the difference
 	// small compared to expected latency.
 	parts := strings.Split(*msg.Content, " ")
-	timeUnixNanos, _ := strconv.ParseInt(parts[0], 10, 64)
-	delay += time.Now().Sub(time.Unix(0, timeUnixNanos))
+	timeNanos, _ := strconv.ParseInt(parts[0], 10, 64)
+	delay += uint64((arrived - timeNanos) / int64(time.Millisecond))
 
 	if count % uint64(*print) == 0 {
 
@@ -135,7 +137,7 @@ func handleMsg(content []byte) {
 		if runningSecs > 0 {
 			log.Print("msgs/sec: ", float64(count) / runningSecs)
 		}
-		log.Print("average latency: ", delay / time.Duration(count))
+		log.Print("average latency: ", delay / count, "ms")
 		log.Print("approx msg loss: ", loss * 100, "%")
 	}
 }
