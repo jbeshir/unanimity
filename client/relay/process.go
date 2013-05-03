@@ -36,6 +36,7 @@ func process() {
 			}
 
 			connections[node] = append(connections[node], conn)
+			go handleConn(node, conn)
 		}
 	}
 	store.EndTransaction()
@@ -78,6 +79,7 @@ func process() {
 
 				connections[node] =
 					append(connections[node], conn)
+				go handleConn(node, conn)
 			}
 
 			store.EndTransaction()
