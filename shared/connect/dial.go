@@ -139,6 +139,7 @@ func TestDial(id uint16) (*BaseConn, error) {
 
 	tlsConn, err := tls.Dial("tcp", ipStr+":"+portStr, tlsConfig)
 	if err != nil {
+		log.Print(err)
 		return nil, err
 	}
 
